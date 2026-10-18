@@ -1,0 +1,10 @@
+# Copy this file to application-local.yaml (it is git-ignored) and fill in your own values.
+# Environment variables work too: MAIL_USERNAME, MAIL_PASSWORD, JWT_SECRET, DB_USERNAME, DB_PASSWORD,
+# SEED_ADMIN_PASSWORD, SEED_EDITOR_PASSWORD, SEED_AUTHOR_PASSWORD, SEED_READER_PASSWORD.
+spring:
+  mail:
+    username: your-address@gmail.com
+    password: "your gmail app password"
+app:
+  jwt:
+    secret: a-long-random-string-of-at-least-64-characters

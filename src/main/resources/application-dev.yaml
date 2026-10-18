@@ -1,0 +1,5 @@
+# Settings that apply only when the "dev" Spring profile is active (SPRING_PROFILES_ACTIVE=dev)
+app:
+  seed:
+    # insert the 20 demo news articles once (db/seed/dev/seed_news_20.sql); set to false to switch it off
+    demo-news: true

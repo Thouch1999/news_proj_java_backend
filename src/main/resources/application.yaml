@@ -1,0 +1,70 @@
+spring:
+  config:
+    # secrets of this machine (git-ignored): MAIL_USERNAME, MAIL_PASSWORD, JWT_SECRET ... see application-local.example.yaml
+    import: optional:file:./application-local.yaml
+  application:
+    name: bearer-auth
+  datasource:
+    url: jdbc:mysql://localhost:3306/springdb?createDatabaseIfNotExist=true&useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=UTC
+    username: ${DB_USERNAME:root}
+    password: ${DB_PASSWORD:}
+  jpa:
+    hibernate:
+      ddl-auto: update
+    show-sql: true
+  mail:
+    host: ${MAIL_HOST:smtp.gmail.com}
+    port: ${MAIL_PORT:587}
+    username: ${MAIL_USERNAME:}
+    password: ${MAIL_PASSWORD:}
+    properties:
+      mail:
+        smtp:
+          auth: true
+          starttls:
+            enable: true
+  servlet:
+    multipart:
+      max-file-size: 5MB
+      max-request-size: 6MB
+  web:
+    error:
+      include-stacktrace: never
+app:
+  otp:
+    ttl-seconds: 180
+    verified-ttl-minutes: 10
+    length: 6
+    max-attempts: 5
+    resend-cooldown-seconds: 60
+    hourly-limit: 5
+  jwt:
+    access-expiration: 900000
+    refresh-expiration: 604800000
+    secret: ${JWT_SECRET:}
+  cors:
+    allowed-origins: ${CORS_ALLOWED_ORIGINS:http://localhost:5173}
+  upload:
+    dir: ${UPLOAD_DIR:./uploads}
+    max-file-size-bytes: 5242880
+    max-images-per-news: 10
+  seed:
+    admin:
+      username: Admin
+      email: admin@news.local
+      password: ${SEED_ADMIN_PASSWORD:}
+    editor:
+      username: Editor
+      email: editor@news.local
+      password: ${SEED_EDITOR_PASSWORD:}
+    author:
+      username: Author
+      email: author@news.local
+      password: ${SEED_AUTHOR_PASSWORD:}
+    reader:
+      username: Reader
+      email: reader@news.local
+      password: ${SEED_READER_PASSWORD:}
+
+server:
+  port: 8080
