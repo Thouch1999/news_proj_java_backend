@@ -58,10 +58,13 @@ class SystemSettingServiceImplTest {
     private SystemSettingServiceImpl service;
     private AppUser admin;
 
+    @Mock
+    private com.api.v1.bearerauth.service.ActivityLogService activityLogService;
+
     @BeforeEach
     void setUp() {
         service = new SystemSettingServiceImpl(systemSettingRepository, appUserRepository, currentUserService,
-                fileStorageService, cacheManager);
+                fileStorageService, cacheManager, activityLogService);
         admin = new AppUser();
         admin.setId(ADMIN_ID);
         lenient().when(currentUserService.getCurrentUser()).thenReturn(admin);

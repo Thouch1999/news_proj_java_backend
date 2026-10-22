@@ -60,14 +60,21 @@ class AuthServiceImplTest {
     private OtpService otpService;
     @Mock
     private CurrentUserService currentUserService;
+    @Mock
+    private org.springframework.context.ApplicationEventPublisher eventPublisher;
 
     private final BCryptPasswordEncoder passwordEncoder = new BCryptPasswordEncoder();
     private AuthServiceImpl authService;
 
+    @Mock
+    private com.api.v1.bearerauth.service.ActivityLogService activityLogService;
+    @Mock
+    private org.springframework.transaction.PlatformTransactionManager transactionManager;
+
     @BeforeEach
     void setUp() {
         authService = new AuthServiceImpl(appUserService, tokenService, jwtService, appUserRepository, otpService,
-                currentUserService, passwordEncoder, new MapperConfig().modelMapper());
+                currentUserService, passwordEncoder, new MapperConfig().modelMapper(), eventPublisher, activityLogService, transactionManager);
     }
 
     private AppUser user(Roles role) {
@@ -143,6 +150,24 @@ class AuthServiceImplTest {
         assertThat(saved.isEmailVerified()).isTrue();
         verify(otpService).verifyOtp("new@news.local", "123456", OtpPurpose.REGISTER);
         verify(otpService).consume("new@news.local", OtpPurpose.REGISTER);
+
+        // the admins are told about the new, verified account (the new user is the actor)
+        org.mockito.ArgumentCaptor<com.api.v1.bearerauth.service.NotificationEvent> event =
+                org.mockito.ArgumentCaptor.forClass(com.api.v1.bearerauth.service.NotificationEvent.class);
+        verify(eventPublisher).publishEvent(event.capture());
+        assertThat(event.getValue().type()).isEqualTo(com.api.v1.bearerauth.model.enumerate.NotificationType.NEW_USER);
+        assertThat(event.getValue().actorId()).isEqualTo(saved.getId());
+        assertThat(event.getValue().recipientId()).isNull();
+    }
+
+    @Test
+    void verifyEmail_ofAnAlreadyVerifiedUser_doesNotNotifyTheAdminsAgain() {
+        AppUser verified = user(Roles.READER);
+        when(appUserRepository.findByEmail(EMAIL)).thenReturn(Optional.of(verified));
+
+        authService.verifyEmail(otpRequest());
+
+        verify(eventPublisher, never()).publishEvent(any(Object.class));
     }
 
     @Test
@@ -327,5 +352,127 @@ class AuthServiceImplTest {
         assertFails(() -> authService.resendOtp(request), MessageConstant.INVALID_PARAMETER, HttpStatus.BAD_REQUEST);
 
         verify(otpService, never()).sendOtp(anyString(), any());
+    }
+
+    // ---------------- the activity log ----------------
+
+    @SuppressWarnings("unchecked")
+    private java.util.Map<String, Object> loggedDetails(com.api.v1.bearerauth.model.enumerate.ActivityAction action) {
+        ArgumentCaptor<java.util.Map<String, Object>> details = ArgumentCaptor.forClass(java.util.Map.class);
+        verify(activityLogService).recordLogin(org.mockito.ArgumentMatchers.eq(action), org.mockito.ArgumentMatchers.isNull(),
+                org.mockito.ArgumentMatchers.anyString(), details.capture());
+        return details.getValue();
+    }
+
+    @Test
+    void login_wrongPassword_isLoggedAsFailed_withTheTypedEmail_andNeverThePassword() {
+        when(appUserRepository.findByEmail(EMAIL)).thenReturn(Optional.of(user(Roles.READER)));
+
+        assertFails(() -> authService.login(loginRequest("Typed-Wrong-1")), MessageConstant.INVALID_CREDENTIALS, HttpStatus.UNAUTHORIZED);
+
+        ArgumentCaptor<String> label = ArgumentCaptor.forClass(String.class);
+        ArgumentCaptor<java.util.Map<String, Object>> details = ArgumentCaptor.forClass(java.util.Map.class);
+        verify(activityLogService).recordLogin(org.mockito.ArgumentMatchers.eq(com.api.v1.bearerauth.model.enumerate.ActivityAction.LOGIN_FAILED),
+                org.mockito.ArgumentMatchers.isNull(), label.capture(), details.capture());
+        assertThat(label.getValue()).isEqualTo(" User@News.local "); // what was typed
+        assertThat(details.getValue()).isEqualTo(java.util.Map.of("reason", "invalid credentials"));
+        assertThat(label.getValue() + details.getValue()).doesNotContain("Typed-Wrong-1").doesNotContain(PASSWORD);
+        verify(activityLogService, never()).recordLogin(org.mockito.ArgumentMatchers.eq(com.api.v1.bearerauth.model.enumerate.ActivityAction.LOGIN_SUCCESS),
+                any(), anyString(), any());
+    }
+
+    @Test
+    void login_unknownEmail_isLoggedAsFailed() {
+        when(appUserRepository.findByEmail(EMAIL)).thenReturn(Optional.empty());
+
+        assertFails(() -> authService.login(loginRequest(PASSWORD)), MessageConstant.INVALID_CREDENTIALS, HttpStatus.UNAUTHORIZED);
+
+        assertThat(loggedDetails(com.api.v1.bearerauth.model.enumerate.ActivityAction.LOGIN_FAILED)).containsEntry("reason", "invalid credentials");
+    }
+
+    @Test
+    void login_inactiveUser_isLoggedAsFailed_withTheReason() {
+        AppUser inactive = user(Roles.READER);
+        inactive.setActive(false);
+        when(appUserRepository.findByEmail(EMAIL)).thenReturn(Optional.of(inactive));
+
+        assertFails(() -> authService.login(loginRequest(PASSWORD)), MessageConstant.ACCOUNT_DISABLED, HttpStatus.FORBIDDEN);
+
+        assertThat(loggedDetails(com.api.v1.bearerauth.model.enumerate.ActivityAction.LOGIN_FAILED)).containsEntry("reason", "account disabled");
+    }
+
+    @Test
+    void login_reader_isLoggedAsSuccess_withTheUser() {
+        AppUser reader = user(Roles.READER);
+        when(appUserRepository.findByEmail(EMAIL)).thenReturn(Optional.of(reader));
+        tokensAreIssued();
+
+        authService.login(loginRequest(PASSWORD));
+
+        verify(activityLogService).recordLogin(com.api.v1.bearerauth.model.enumerate.ActivityAction.LOGIN_SUCCESS, reader, EMAIL, null);
+        verify(activityLogService, never()).recordLogin(org.mockito.ArgumentMatchers.eq(com.api.v1.bearerauth.model.enumerate.ActivityAction.LOGIN_FAILED),
+                any(), anyString(), any());
+    }
+
+    @Test
+    void login_staff_isLoggedAsSuccess_onlyAfterTheOtp() {
+        AppUser editor = user(Roles.EDITOR);
+        when(appUserRepository.findByEmail(EMAIL)).thenReturn(Optional.of(editor));
+
+        authService.login(loginRequest(PASSWORD)); // the password is right, the second step is still to come
+
+        verify(activityLogService, never()).recordLogin(any(), any(), anyString(), any());
+
+        tokensAreIssued();
+        authService.verifyLoginOtp(otpRequest());
+
+        verify(activityLogService).recordLogin(com.api.v1.bearerauth.model.enumerate.ActivityAction.LOGIN_SUCCESS, editor, EMAIL, null);
+    }
+
+    @Test
+    void verifyLoginOtp_wrongCode_isLoggedAsFailed_withoutTheCode() {
+        doThrow(new CustomException(HttpStatus.BAD_REQUEST, MessageConstant.OTP_INVALID.getDefaultMessage()))
+                .when(otpService).verifyOtp(anyString(), anyString(), any());
+
+        assertFails(() -> authService.verifyLoginOtp(otpRequest()), MessageConstant.OTP_INVALID, HttpStatus.BAD_REQUEST);
+
+        java.util.Map<String, Object> details = loggedDetails(com.api.v1.bearerauth.model.enumerate.ActivityAction.LOGIN_FAILED);
+        assertThat(details).isEqualTo(java.util.Map.of("reason", "invalid otp"));
+        assertThat(details.toString()).doesNotContain("123456");
+    }
+
+    @Test
+    void changePassword_isLogged_withoutAnyPassword() {
+        AppUser current = user(Roles.READER);
+        when(currentUserService.getCurrentUser()).thenReturn(current);
+        when(appUserRepository.findById(1L)).thenReturn(Optional.of(current));
+        com.api.v1.bearerauth.model.request.ChangePasswordRequest request = new com.api.v1.bearerauth.model.request.ChangePasswordRequest();
+        request.setCurrentPassword(PASSWORD);
+        request.setPassword("Brand-New-9");
+        request.setConfirm("Brand-New-9");
+
+        authService.changePassword(request);
+
+        ArgumentCaptor<java.util.Map<String, Object>> details = ArgumentCaptor.forClass(java.util.Map.class);
+        verify(activityLogService).recordFor(org.mockito.ArgumentMatchers.eq(current),
+                org.mockito.ArgumentMatchers.eq(com.api.v1.bearerauth.model.enumerate.ActivityAction.PASSWORD_CHANGED),
+                org.mockito.ArgumentMatchers.eq(com.api.v1.bearerauth.model.enumerate.ActivityTargetType.AUTH),
+                org.mockito.ArgumentMatchers.eq(1L), org.mockito.ArgumentMatchers.eq(EMAIL), details.capture());
+        assertThat(details.getValue()).isEqualTo(java.util.Map.of("method", "change"));
+    }
+
+    @Test
+    void changePassword_wrongCurrentPassword_isNotLogged() {
+        AppUser current = user(Roles.READER);
+        when(currentUserService.getCurrentUser()).thenReturn(current);
+        when(appUserRepository.findById(1L)).thenReturn(Optional.of(current));
+        com.api.v1.bearerauth.model.request.ChangePasswordRequest request = new com.api.v1.bearerauth.model.request.ChangePasswordRequest();
+        request.setCurrentPassword("Not-The-Password");
+        request.setPassword("Brand-New-9");
+        request.setConfirm("Brand-New-9");
+
+        assertFails(() -> authService.changePassword(request), MessageConstant.CURRENT_PASSWORD_INCORRECT, HttpStatus.BAD_REQUEST);
+
+        verify(activityLogService, never()).recordFor(any(), any(), any(), any(), any(), any());
     }
 }

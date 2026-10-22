@@ -90,6 +90,7 @@ public class DataSeeder implements ApplicationRunner {
     public void run(ApplicationArguments args) {
         seedRolesAndPermissions();
         seedUsers();
+        markSuperAdmin();
         seedCategories();
         seedTags();
         seedSettings();
@@ -139,6 +140,7 @@ public class DataSeeder implements ApplicationRunner {
     private void seedUsers() {
         AppProperty.Seed seed = appProperty.getSeed();
         seedUser(Roles.ADMIN, seed.getAdmin());
+        seedUser(Roles.ADMIN, seed.getSuperAdmin());
         seedUser(Roles.EDITOR, seed.getEditor());
         seedUser(Roles.AUTHOR, seed.getAuthor());
         seedUser(Roles.READER, seed.getReader());
@@ -171,6 +173,42 @@ public class DataSeeder implements ApplicationRunner {
             link.setUser(user);
             link.setRole(role);
             userRoleRepository.save(link);
+        }
+    }
+
+    // the first start only: when no super admin exists, the user of app.super-admin-email becomes it (needs to exist and be
+    // an active ADMIN; the ADMIN role is added when missing). Once there is a super admin the setting is never read again.
+    void markSuperAdmin() {
+        try {
+            if (appUserRepository.existsBySuperAdminMarkTrue()) {
+                log.info("Super admin: already set, app.super-admin-email is ignored");
+                return;
+            }
+            String email = appProperty.getSuperAdminEmail() == null ? "" : appProperty.getSuperAdminEmail().trim().toLowerCase();
+            if (email.isEmpty()) {
+                log.warn("Super admin: none exists and app.super-admin-email (SUPER_ADMIN_EMAIL) is not set; nobody can manage admins until it is");
+                return;
+            }
+            AppUser user = appUserRepository.findByEmail(email).orElse(null);
+            if (user == null || !user.isActive()) {
+                log.warn("Super admin: app.super-admin-email does not match an existing active user; none was set");
+                return;
+            }
+            if (user.getRole() != Roles.ADMIN) {
+                log.warn("Super admin: user {} did not have the ADMIN role; it was added", user.getId());
+                user.setRole(Roles.ADMIN);
+                Role admin = roleRepository.findByName(Roles.ADMIN.name()).orElseThrow();
+                userRoleRepository.findAllByUserId(user.getId()).forEach(userRoleRepository::delete);
+                UserRole link = new UserRole();
+                link.setUser(user);
+                link.setRole(admin);
+                userRoleRepository.save(link);
+            }
+            user.setSuperAdmin(true);
+            appUserRepository.save(user);
+            log.info("Super admin: user {} was marked as the super admin", user.getId());
+        } catch (RuntimeException e) {
+            log.warn("Super admin: could not be set ({})", e.getMessage());
         }
     }
 

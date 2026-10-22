@@ -19,4 +19,5 @@ public class AppUserDto {
     private boolean active;
     private boolean emailVerified;
     private Roles role;
+    private boolean superAdmin;
 }

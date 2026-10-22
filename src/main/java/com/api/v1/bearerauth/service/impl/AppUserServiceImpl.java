@@ -2,6 +2,10 @@ package com.api.v1.bearerauth.service.impl;
 
 import com.api.v1.bearerauth.common.constant.MessageConstant;
 import com.api.v1.bearerauth.common.exception.CustomException;
+import com.api.v1.bearerauth.model.enumerate.ActivityAction;
+import com.api.v1.bearerauth.model.enumerate.ActivityTargetType;
+import com.api.v1.bearerauth.service.ActivityLogService;
+import com.api.v1.bearerauth.util.ActivityDetails;
 import com.api.v1.bearerauth.model.entity.AppUser;
 import com.api.v1.bearerauth.model.entity.Role;
 import com.api.v1.bearerauth.model.entity.UserRole;
@@ -10,6 +14,7 @@ import com.api.v1.bearerauth.model.request.AdminCreateUserRequest;
 import com.api.v1.bearerauth.model.request.AdminResetPasswordRequest;
 import com.api.v1.bearerauth.model.request.AppUserAddRequest;
 import com.api.v1.bearerauth.model.request.ChangeRoleRequest;
+import com.api.v1.bearerauth.model.request.TransferSuperAdminRequest;
 import com.api.v1.bearerauth.model.request.UpdateProfileRequest;
 import com.api.v1.bearerauth.model.response.AppUserDto;
 import com.api.v1.bearerauth.repository.AppUserRepository;
@@ -23,6 +28,8 @@ import jakarta.transaction.Transactional;
 import lombok.AllArgsConstructor;
 import org.jspecify.annotations.NullMarked;
 import org.modelmapper.ModelMapper;
+import com.api.v1.bearerauth.service.NotificationEvent;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Sort;
@@ -49,6 +56,8 @@ public class AppUserServiceImpl implements AppUserService {
     private final RoleRepository roleRepository;
     private final UserRoleRepository userRoleRepository;
     private final FileStorageService fileStorageService;
+    private final ApplicationEventPublisher eventPublisher;
+    private final ActivityLogService activityLogService;
 
     @Override
     @NullMarked
@@ -141,12 +150,17 @@ public class AppUserServiceImpl implements AppUserService {
     @Override
     @Transactional
     public AppUserDto createStaff(AdminCreateUserRequest request) {
-        if (request.getRole() != Roles.AUTHOR && request.getRole() != Roles.EDITOR) {
-            throw new CustomException(HttpStatus.BAD_REQUEST, MessageConstant.INVALID_PARAMETER.getDefaultMessage());
-        }
         String email = request.getEmail().trim().toLowerCase();
         if (appUserRepository.existsByEmail(email)) {
             throw new CustomException(HttpStatus.CONFLICT, MessageConstant.EMAIL_ALREADY_EXISTS.getDefaultMessage());
+        }
+        // any of the four roles, as long as it exists in the roles table (an unknown name never gets here: the request cannot be read)
+        if (request.getRole() == null || roleRepository.findByName(request.getRole().name()).isEmpty()) {
+            throw new CustomException(HttpStatus.BAD_REQUEST, MessageConstant.INVALID_PARAMETER.getDefaultMessage());
+        }
+
+        if (request.getRole() == Roles.ADMIN) {
+            requireSuperAdmin(currentUserService.getCurrentUser());
         }
 
         AppUser user = new AppUser();
@@ -162,20 +176,39 @@ public class AppUserServiceImpl implements AppUserService {
         user = appUserRepository.save(user);
 
         syncUserRole(user);
+        activityLogService.record(ActivityAction.USER_CREATED, ActivityTargetType.USER, user.getId(), label(user),
+                ActivityDetails.of("role", user.getRole(), "adminRoleGranted", user.getRole() == Roles.ADMIN ? true : null));
         return mapper.map(user, AppUserDto.class);
     }
 
     @Override
     @Transactional
     public AppUserDto setActive(Long id, boolean active) {
-        if (!active && id.equals(currentUserService.getCurrentUser().getId())) {
-            throw new CustomException(HttpStatus.BAD_REQUEST, MessageConstant.CANNOT_DEACTIVATE_SELF.getDefaultMessage());
+        AppUser actor = currentUserService.getCurrentUser();
+        if (!active && id.equals(actor.getId())) {
+            throw actor.isSuperAdmin()
+                    ? new CustomException(HttpStatus.FORBIDDEN, MessageConstant.SUPER_ADMIN_CANNOT_BE_DEACTIVATED.getDefaultMessage())
+                    : new CustomException(HttpStatus.BAD_REQUEST, MessageConstant.CANNOT_DEACTIVATE_SELF.getDefaultMessage());
         }
         AppUser user = findUser(id);
+        if (!active) {
+            if (user.isSuperAdmin()) {
+                throw new CustomException(HttpStatus.FORBIDDEN, MessageConstant.SUPER_ADMIN_CANNOT_BE_DEACTIVATED.getDefaultMessage());
+            }
+            if (user.getRole() == Roles.ADMIN) {
+                requireSuperAdmin(actor);
+                requireAnotherActiveAdmin(user);
+            }
+        }
+        boolean changed = user.isActive() != active;
         user.setActive(active);
         user = appUserRepository.save(user);
         if (!active) {
             revokeRefreshTokens(user);
+        }
+        if (changed) {
+            activityLogService.record(active ? ActivityAction.USER_ACTIVATED : ActivityAction.USER_DEACTIVATED,
+                    ActivityTargetType.USER, user.getId(), label(user), null);
         }
         return mapper.map(user, AppUserDto.class);
     }
@@ -183,24 +216,100 @@ public class AppUserServiceImpl implements AppUserService {
     @Override
     @Transactional
     public AppUserDto changeRole(Long id, ChangeRoleRequest request) {
-        if (id.equals(currentUserService.getCurrentUser().getId()) && request.getRole() != Roles.ADMIN) {
+        AppUser actor = currentUserService.getCurrentUser();
+        if (id.equals(actor.getId()) && actor.isSuperAdmin()) {
+            throw new CustomException(HttpStatus.FORBIDDEN, MessageConstant.SUPER_ADMIN_ROLE_PROTECTED.getDefaultMessage());
+        }
+        if (id.equals(actor.getId()) && request.getRole() != Roles.ADMIN) {
             throw new CustomException(HttpStatus.BAD_REQUEST, MessageConstant.CANNOT_REMOVE_OWN_ADMIN_ROLE.getDefaultMessage());
         }
         AppUser user = findUser(id);
+        if (user.isSuperAdmin()) {
+            throw new CustomException(HttpStatus.FORBIDDEN, MessageConstant.SUPER_ADMIN_ROLE_PROTECTED.getDefaultMessage());
+        }
+        Roles previous = user.getRole();
+        boolean touchesAdminRole = (previous == Roles.ADMIN) != (request.getRole() == Roles.ADMIN);
+        if (touchesAdminRole) {
+            requireSuperAdmin(actor);
+            if (previous == Roles.ADMIN) {
+                requireAnotherActiveAdmin(user);
+            }
+        }
         user.setRole(request.getRole());
         user = appUserRepository.save(user);
 
         syncUserRole(user);
+        if (previous != user.getRole()) {
+            activityLogService.record(ActivityAction.USER_ROLES_CHANGED, ActivityTargetType.USER, user.getId(), label(user),
+                    ActivityDetails.of("roles", ActivityDetails.change(List.of(previous.name()), List.of(user.getRole().name())),
+                            "adminRoleGranted", touchesAdminRole && user.getRole() == Roles.ADMIN ? true : null,
+                            "adminRoleRemoved", touchesAdminRole && previous == Roles.ADMIN ? true : null));
+            // a user has one role: assigning a new one removes the old one
+            eventPublisher.publishEvent(NotificationEvent.rolesChanged(actor, user,
+                    List.of(user.getRole().name()), List.of(previous.name())));
+        }
         return mapper.map(user, AppUserDto.class);
     }
 
     @Override
     @Transactional
     public void resetPassword(Long id, AdminResetPasswordRequest request) {
+        AppUser actor = currentUserService.getCurrentUser();
         AppUser user = findUser(id);
+        if (user.isSuperAdmin()) {
+            throw new CustomException(HttpStatus.FORBIDDEN, MessageConstant.SUPER_ADMIN_PASSWORD_PROTECTED.getDefaultMessage());
+        }
+        if (user.getRole() == Roles.ADMIN && !id.equals(actor.getId())) {
+            requireSuperAdmin(actor);
+        }
         user.setPassword(passwordEncoder.encode(this.confirm(request.getPassword(), request.getConfirm())));
         appUserRepository.save(user);
         revokeRefreshTokens(user);
+        activityLogService.record(ActivityAction.USER_PASSWORD_RESET, ActivityTargetType.USER, user.getId(), label(user), null); // never the password
+    }
+
+    @Override
+    @Transactional
+    public AppUserDto transferSuperAdmin(TransferSuperAdminRequest request) {
+        AppUser actor = findUser(currentUserService.getCurrentUser().getId()); // fresh from the database, not the token's copy
+        requireSuperAdmin(actor);
+        if (!passwordEncoder.matches(request.getPassword(), actor.getPassword())) {
+            throw new CustomException(HttpStatus.BAD_REQUEST, MessageConstant.CURRENT_PASSWORD_INCORRECT.getDefaultMessage());
+        }
+        AppUser target = findUser(request.getUserId());
+        if (target.getId().equals(actor.getId()) || target.getRole() != Roles.ADMIN
+                || !target.isActive() || !target.isEmailVerified()) {
+            throw new CustomException(HttpStatus.BAD_REQUEST, MessageConstant.SUPER_ADMIN_TRANSFER_INVALID_TARGET.getDefaultMessage());
+        }
+
+        // the old mark is cleared and written first, so the unique index never sees two marks
+        actor.setSuperAdmin(false);
+        appUserRepository.saveAndFlush(actor);
+        target.setSuperAdmin(true);
+        target = appUserRepository.saveAndFlush(target);
+
+        activityLogService.record(ActivityAction.SUPER_ADMIN_TRANSFERRED, ActivityTargetType.USER, target.getId(), label(target),
+                ActivityDetails.of("from", label(actor), "fromId", actor.getId(), "to", label(target), "toId", target.getId()));
+        return mapper.map(target, AppUserDto.class);
+    }
+
+    // only the super admin may give or remove the ADMIN role, create an admin, or deactivate / reset another admin
+    private void requireSuperAdmin(AppUser actor) {
+        if (!actor.isSuperAdmin()) {
+            throw new CustomException(HttpStatus.FORBIDDEN, MessageConstant.SUPER_ADMIN_ONLY.getDefaultMessage());
+        }
+    }
+
+    // the system keeps at least one active admin: `leaving` is about to stop being one
+    private void requireAnotherActiveAdmin(AppUser leaving) {
+        if (leaving.isActive() && appUserRepository.countByRoleAndActiveTrue(Roles.ADMIN) <= 1) {
+            throw new CustomException(HttpStatus.CONFLICT, MessageConstant.LAST_ADMIN_REQUIRED.getDefaultMessage());
+        }
+    }
+
+    // how the user is named in the activity log: the username, else the email
+    private String label(AppUser user) {
+        return user.getName() != null && !user.getName().isBlank() ? user.getName() : user.getEmail();
     }
 
     // keeps the user_roles table in line with AppUser.role: exactly one link, to the current role

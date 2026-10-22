@@ -9,6 +9,8 @@ import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 
+import java.util.Collection;
+import java.util.List;
 import java.util.Optional;
 
 
@@ -16,6 +18,10 @@ import java.util.Optional;
 public interface AppUserRepository extends JpaRepository<AppUser, Long> {
     Optional<AppUser> findByEmail(String email);
     boolean existsByEmail(String email);
+    Optional<AppUser> findBySuperAdminMarkTrue();
+    boolean existsBySuperAdminMarkTrue();
+    long countByRoleAndActiveTrue(Roles role);
+    List<AppUser> findByRoleInAndActiveTrue(Collection<Roles> roles);
 
     @Query("""
             select u from AppUser u

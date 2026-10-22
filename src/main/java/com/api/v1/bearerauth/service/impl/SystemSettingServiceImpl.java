@@ -3,6 +3,10 @@ package com.api.v1.bearerauth.service.impl;
 import com.api.v1.bearerauth.common.constant.MessageConstant;
 import com.api.v1.bearerauth.common.exception.CustomException;
 import com.api.v1.bearerauth.config.CacheConfig;
+import com.api.v1.bearerauth.model.enumerate.ActivityAction;
+import com.api.v1.bearerauth.model.enumerate.ActivityTargetType;
+import com.api.v1.bearerauth.service.ActivityLogService;
+import com.api.v1.bearerauth.util.ActivityDetails;
 import com.api.v1.bearerauth.model.entity.AppUser;
 import com.api.v1.bearerauth.model.entity.SystemSetting;
 import com.api.v1.bearerauth.model.enumerate.SettingGroup;
@@ -63,6 +67,7 @@ public class SystemSettingServiceImpl implements SystemSettingService {
     private final CurrentUserService currentUserService;
     private final FileStorageService fileStorageService;
     private final CacheManager cacheManager;
+    private final ActivityLogService activityLogService;
 
     // ---- reading ----
 
@@ -146,8 +151,12 @@ public class SystemSettingServiceImpl implements SystemSettingService {
         AppUser admin = currentAdmin();
         List<SystemSetting> changed = new ArrayList<>();
         List<String> replacedFiles = new ArrayList<>();
+        Map<String, Object> changedKeys = new LinkedHashMap<>();
         cleaned.forEach((setting, value) -> {
             SystemSetting row = rows.computeIfAbsent(setting.getKey(), key -> newRow(setting));
+            if (!row.getSettingValue().equals(value)) {
+                changedKeys.put(setting.getKey(), changeOf(setting, row.getSettingValue(), value));
+            }
             if (setting.getType() == SettingType.IMAGE && !row.getSettingValue().equals(value)) {
                 replacedFiles.add(row.getSettingValue()); // an image was cleared: its file goes
             }
@@ -155,6 +164,10 @@ public class SystemSettingServiceImpl implements SystemSettingService {
             changed.add(row);
         });
         systemSettingRepository.saveAll(changed);
+        if (!changedKeys.isEmpty()) {
+            activityLogService.record(ActivityAction.SETTINGS_UPDATED, ActivityTargetType.SETTINGS, null, group.getPath(),
+                    ActivityDetails.of("group", group.getPath(), "changed", changedKeys));
+        }
         afterCommit(this::clearCache);
         afterCommit(() -> replacedFiles.forEach(fileStorageService::delete));
 
@@ -186,6 +199,9 @@ public class SystemSettingServiceImpl implements SystemSettingService {
         String previous = row.getSettingValue();
         touch(row, url, currentAdmin());
         systemSettingRepository.save(row);
+        activityLogService.record(ActivityAction.SETTINGS_UPDATED, ActivityTargetType.SETTINGS, null, setting.getGroup().getPath(),
+                ActivityDetails.of("group", setting.getGroup().getPath(),
+                        "changed", Map.of(setting.getKey(), changeOf(setting, previous, url))));
         afterCommit(this::clearCache);
         afterCommit(() -> fileStorageService.delete(previous));
 
@@ -220,6 +236,12 @@ public class SystemSettingServiceImpl implements SystemSettingService {
         systemSettingRepository.findAllBySettingKeyIn(settings.stream().map(SettingKey::getKey).toList())
                 .forEach(row -> rows.put(row.getSettingKey(), row));
         return rows;
+    }
+
+    // what the activity log keeps of a changed setting: the value before and after for a public setting (nothing in it is
+    // secret), and only the fact that it changed for any other
+    private Object changeOf(SettingKey setting, String before, String after) {
+        return setting.isPublicSetting() ? ActivityDetails.change(before, after) : "changed";
     }
 
     private SystemSetting newRow(SettingKey setting) {
@@ -260,6 +282,11 @@ public class SystemSettingServiceImpl implements SystemSettingService {
         Cache cache = cacheManager.getCache(CacheConfig.SETTINGS_CACHE);
         if (cache != null) {
             cache.clear();
+        }
+        // the link previews show the site name, the descriptions and the images of the settings
+        Cache previews = cacheManager.getCache(CacheConfig.PREVIEW_CACHE);
+        if (previews != null) {
+            previews.clear();
         }
     }
 

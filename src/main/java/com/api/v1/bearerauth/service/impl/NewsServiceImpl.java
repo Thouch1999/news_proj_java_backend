@@ -31,12 +31,20 @@ import com.api.v1.bearerauth.repository.NewsTagRepository;
 import com.api.v1.bearerauth.repository.NewsViewRepository;
 import com.api.v1.bearerauth.repository.TagRepository;
 import com.api.v1.bearerauth.security.CurrentUserService;
+import com.api.v1.bearerauth.model.enumerate.ActivityAction;
+import com.api.v1.bearerauth.model.enumerate.ActivityTargetType;
+import com.api.v1.bearerauth.service.ActivityLogService;
 import com.api.v1.bearerauth.service.FileStorageService;
+import com.api.v1.bearerauth.util.ActivityDetails;
 import com.api.v1.bearerauth.service.NewsService;
+import com.api.v1.bearerauth.service.PreviewService;
 import com.api.v1.bearerauth.service.SystemSettingService;
 import com.api.v1.bearerauth.util.SlugUtil;
 import jakarta.transaction.Transactional;
 import lombok.RequiredArgsConstructor;
+import com.api.v1.bearerauth.model.enumerate.NotificationType;
+import com.api.v1.bearerauth.service.NotificationEvent;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Sort;
@@ -46,6 +54,7 @@ import org.springframework.web.multipart.MultipartFile;
 
 import java.time.LocalDateTime;
 import java.util.EnumSet;
+import java.util.Objects;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Set;
@@ -64,16 +73,18 @@ public class NewsServiceImpl implements NewsService {
 
     // the editorial workflow: the actions and, for each, the roles and statuses it is allowed from (see transition)
     private enum Action {
-        SUBMIT(NewsStatus.PENDING),
-        PUBLISH(NewsStatus.PUBLISHED),
-        REJECT(NewsStatus.REJECTED),
-        ARCHIVE(NewsStatus.ARCHIVED),
-        RESTORE(NewsStatus.PUBLISHED);
+        SUBMIT(NewsStatus.PENDING, ActivityAction.NEWS_SUBMITTED),
+        PUBLISH(NewsStatus.PUBLISHED, ActivityAction.NEWS_PUBLISHED),
+        REJECT(NewsStatus.REJECTED, ActivityAction.NEWS_REJECTED),
+        ARCHIVE(NewsStatus.ARCHIVED, ActivityAction.NEWS_ARCHIVED),
+        RESTORE(NewsStatus.PUBLISHED, ActivityAction.NEWS_RESTORED);
 
         private final NewsStatus target;
+        private final ActivityAction activity;
 
-        Action(NewsStatus target) {
+        Action(NewsStatus target, ActivityAction activity) {
             this.target = target;
+            this.activity = activity;
         }
     }
 
@@ -91,6 +102,9 @@ public class NewsServiceImpl implements NewsService {
     private final FileStorageService fileStorageService;
     private final AppProperty appProperty;
     private final SystemSettingService systemSettingService;
+    private final ApplicationEventPublisher eventPublisher;
+    private final PreviewService previewService;
+    private final ActivityLogService activityLogService;
 
     @Override
     @Transactional
@@ -128,6 +142,8 @@ public class NewsServiceImpl implements NewsService {
         history.setChangedBy(author);
         history.setNote("Article created");
         newsStatusHistoryRepository.save(history);
+        activityLogService.record(ActivityAction.NEWS_CREATED, ActivityTargetType.NEWS, saved.getId(), saved.getTitle(),
+                ActivityDetails.of("category", category.getName()));
 
         return toDto(saved);
     }
@@ -142,6 +158,14 @@ public class NewsServiceImpl implements NewsService {
             category = activeCategory(request.getCategoryId()); // only a changed category must still be active
         }
         List<Tag> tags = request.getTagIds() == null ? null : findTags(request.getTagIds());
+        // what the article was, for the activity log
+        String titleBefore = news.getTitle();
+        String summaryBefore = news.getSummary();
+        String contentBefore = news.getContent();
+        String categoryBefore = news.getCategory().getName();
+        boolean commentsBefore = news.isCommentsEnabled();
+        List<String> tagsBefore = tags == null ? null : newsTagRepository.findAllByNewsId(news.getId()).stream()
+                .map(link -> link.getTag().getName()).sorted().toList();
 
         // the slug and the status never change here; a REJECTED article keeps its rejection reason
         news.setTitle(request.getTitle().trim());
@@ -154,6 +178,20 @@ public class NewsServiceImpl implements NewsService {
         News saved = newsRepository.save(news);
         if (tags != null) {
             replaceTags(saved, tags);
+        }
+        previewService.evictNews(saved.getSlug());
+
+        ActivityDetails.Changes changes = new ActivityDetails.Changes()
+                .field("title", titleBefore, saved.getTitle())
+                .field("summary", summaryBefore, saved.getSummary())
+                .field("category", categoryBefore, saved.getCategory().getName())
+                .field("commentsEnabled", commentsBefore, saved.isCommentsEnabled())
+                .note("content", !Objects.equals(contentBefore, saved.getContent()));
+        if (tags != null) {
+            changes.field("tags", tagsBefore, tags.stream().map(Tag::getName).sorted().toList());
+        }
+        if (!changes.isEmpty()) {
+            activityLogService.record(ActivityAction.NEWS_UPDATED, ActivityTargetType.NEWS, saved.getId(), saved.getTitle(), changes.toDetails());
         }
         return toDto(saved);
     }
@@ -203,6 +241,10 @@ public class NewsServiceImpl implements NewsService {
         newsImageRepository.deleteAllByNewsId(id);
         newsStatusHistoryRepository.deleteAllByNewsId(id);
         newsRepository.delete(news);
+        previewService.evictNews(news.getSlug());
+        // the title is kept in the entry, so it still says which article it was
+        activityLogService.record(ActivityAction.NEWS_DELETED, ActivityTargetType.NEWS, id, news.getTitle(),
+                ActivityDetails.of("status", news.getStatus()));
 
         images.forEach(image -> fileStorageService.delete(image.getUrl()));
         fileStorageService.delete(news.getThumbnail());
@@ -258,6 +300,7 @@ public class NewsServiceImpl implements NewsService {
         String previous = news.getThumbnail();
         news.setThumbnail(fileStorageService.store(file));
         News saved = newsRepository.save(news);
+        previewService.evictNews(saved.getSlug());
         fileStorageService.delete(previous);
         return toDto(saved);
     }
@@ -269,6 +312,7 @@ public class NewsServiceImpl implements NewsService {
         String previous = news.getThumbnail();
         news.setThumbnail(null);
         News saved = newsRepository.save(news);
+        previewService.evictNews(saved.getSlug());
         fileStorageService.delete(previous);
         return toDto(saved);
     }
@@ -312,8 +356,14 @@ public class NewsServiceImpl implements NewsService {
             throw new CustomException(HttpStatus.FORBIDDEN, MessageConstant.NEWS_ACTION_NOT_ALLOWED.getDefaultMessage());
         }
         News news = newsRepository.findById(id).orElseThrow(this::newsNotFound);
+        boolean before = news.isCommentsEnabled();
         news.setCommentsEnabled(enabled);
-        return toDto(newsRepository.save(news));
+        News saved = newsRepository.save(news);
+        if (before != enabled) {
+            activityLogService.record(ActivityAction.COMMENTS_TOGGLED, ActivityTargetType.NEWS, saved.getId(), saved.getTitle(),
+                    ActivityDetails.of("commentsEnabled", ActivityDetails.change(before, enabled)));
+        }
+        return toDto(saved);
     }
 
     @Override
@@ -407,6 +457,7 @@ public class NewsServiceImpl implements NewsService {
         }
         news.setStatus(action.target);
         News saved = newsRepository.save(news);
+        previewService.evictNews(saved.getSlug()); // published, archived, restored ...: the link preview changes
 
         NewsStatusHistory history = new NewsStatusHistory();
         history.setNews(saved);
@@ -415,8 +466,25 @@ public class NewsServiceImpl implements NewsService {
         history.setChangedBy(appUserRepository.getReferenceById(actor.getId()));
         history.setNote(historyNote(action, from, note));
         newsStatusHistoryRepository.save(history);
+        activityLogService.record(action.activity, ActivityTargetType.NEWS, saved.getId(), saved.getTitle(),
+                ActivityDetails.of("from", from, "to", action.target, "reason", note));
 
+        publishNotification(action, actor, saved, note);
         return toDto(saved);
+    }
+
+    // written after this transaction commits (NotificationEventListener); a restore notifies nobody
+    private void publishNotification(Action action, AppUser actor, News news, String reason) {
+        switch (action) {
+            case SUBMIT -> eventPublisher.publishEvent(NotificationEvent.articleSubmitted(actor, news));
+            case PUBLISH -> eventPublisher.publishEvent(
+                    NotificationEvent.articleDecision(NotificationType.ARTICLE_PUBLISHED, actor, news, null));
+            case REJECT -> eventPublisher.publishEvent(
+                    NotificationEvent.articleDecision(NotificationType.ARTICLE_REJECTED, actor, news, reason));
+            case ARCHIVE -> eventPublisher.publishEvent(
+                    NotificationEvent.articleDecision(NotificationType.ARTICLE_ARCHIVED, actor, news, null));
+            case RESTORE -> { }
+        }
     }
 
     private String historyNote(Action action, NewsStatus from, String reason) {

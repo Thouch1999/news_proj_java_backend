@@ -35,9 +35,12 @@ class CategoryServiceImplTest {
 
     private CategoryServiceImpl service;
 
+    @Mock
+    private com.api.v1.bearerauth.service.ActivityLogService activityLogService;
+
     @BeforeEach
     void setUp() {
-        service = new CategoryServiceImpl(categoryRepository, newsRepository, new MapperConfig().modelMapper());
+        service = new CategoryServiceImpl(categoryRepository, newsRepository, new MapperConfig().modelMapper(), activityLogService);
     }
 
     private Category category(long id, String name, String slug, boolean active) {

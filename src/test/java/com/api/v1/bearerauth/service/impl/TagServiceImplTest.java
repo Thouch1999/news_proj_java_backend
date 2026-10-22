@@ -35,9 +35,12 @@ class TagServiceImplTest {
 
     private TagServiceImpl service;
 
+    @Mock
+    private com.api.v1.bearerauth.service.ActivityLogService activityLogService;
+
     @BeforeEach
     void setUp() {
-        service = new TagServiceImpl(tagRepository, newsTagRepository, new MapperConfig().modelMapper());
+        service = new TagServiceImpl(tagRepository, newsTagRepository, new MapperConfig().modelMapper(), activityLogService);
     }
 
     private Tag tag(long id, String name, String slug) {

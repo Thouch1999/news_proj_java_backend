@@ -91,16 +91,23 @@ class NewsWorkflowServiceTest {
     private FileStorageService fileStorageService;
     @Mock
     private SystemSettingService systemSettingService;
+    @Mock
+    private org.springframework.context.ApplicationEventPublisher eventPublisher;
+    @Mock
+    private com.api.v1.bearerauth.service.PreviewService previewService;
 
     private NewsServiceImpl service;
     private AppUser owner;
     private AppUser actor;
 
+    @Mock
+    private com.api.v1.bearerauth.service.ActivityLogService activityLogService;
+
     @BeforeEach
     void setUp() {
         service = new NewsServiceImpl(newsRepository, newsTagRepository, newsImageRepository, newsStatusHistoryRepository,
                 commentRepository, bookmarkRepository, newsViewRepository, categoryRepository, tagRepository,
-                appUserRepository, currentUserService, fileStorageService, new AppProperty(), systemSettingService);
+                appUserRepository, currentUserService, fileStorageService, new AppProperty(), systemSettingService, eventPublisher, previewService, activityLogService);
         lenient().when(systemSettingService.isCommentsEnabledDefault()).thenReturn(true);
         owner = user(OWNER_ID, Roles.AUTHOR);
         loginAs(owner);
@@ -202,6 +209,71 @@ class NewsWorkflowServiceTest {
         }
     }
 
+    // ---------------- notifications (the event is written after the commit, see NotificationEventListener) ----------------
+
+    private com.api.v1.bearerauth.service.NotificationEvent publishedEvent() {
+        ArgumentCaptor<com.api.v1.bearerauth.service.NotificationEvent> event =
+                ArgumentCaptor.forClass(com.api.v1.bearerauth.service.NotificationEvent.class);
+        verify(eventPublisher).publishEvent(event.capture());
+        return event.getValue();
+    }
+
+    @Test
+    void submit_publishesArticleSubmitted_forTheReviewers_notForOneUser() {
+        article(NewsStatus.DRAFT);
+
+        service.submit(NEWS_ID);
+
+        var event = publishedEvent();
+        assertThat(event.type()).isEqualTo(com.api.v1.bearerauth.model.enumerate.NotificationType.ARTICLE_SUBMITTED);
+        assertThat(event.actorId()).isEqualTo(OWNER_ID);
+        assertThat(event.recipientId()).isNull(); // every editor and admin except the actor, resolved by NotificationService
+        assertThat(event.newsId()).isEqualTo(NEWS_ID);
+        assertThat(event.data()).containsEntry("newsTitle", "Title").containsEntry("newsSlug", "title");
+    }
+
+    @Test
+    void publishRejectArchive_notifyTheAuthor_withTheReasonOnReject() {
+        var types = java.util.Map.of(
+                "publish", com.api.v1.bearerauth.model.enumerate.NotificationType.ARTICLE_PUBLISHED,
+                "reject", com.api.v1.bearerauth.model.enumerate.NotificationType.ARTICLE_REJECTED,
+                "archive", com.api.v1.bearerauth.model.enumerate.NotificationType.ARTICLE_ARCHIVED);
+        for (String action : types.keySet()) {
+            org.mockito.Mockito.clearInvocations(eventPublisher);
+            loginAs(Roles.EDITOR);
+            article(action.equals("archive") ? NewsStatus.PUBLISHED : NewsStatus.PENDING);
+
+            switch (action) {
+                case "publish" -> service.publish(NEWS_ID);
+                case "reject" -> service.reject(NEWS_ID, "Add sources");
+                default -> service.archive(NEWS_ID);
+            }
+
+            var event = publishedEvent();
+            assertThat(event.type()).isEqualTo(types.get(action));
+            assertThat(event.recipientId()).isEqualTo(OWNER_ID);
+            assertThat(event.actorId()).isEqualTo(EDITOR_ID);
+            if (action.equals("reject")) {
+                assertThat(event.data()).containsEntry("reason", "Add sources");
+            } else {
+                assertThat(event.data()).doesNotContainKey("reason");
+            }
+        }
+    }
+
+    @Test
+    void restore_andARefusedAction_publishNothing() {
+        loginAs(Roles.ADMIN);
+        article(NewsStatus.ARCHIVED);
+        service.restore(NEWS_ID);
+
+        loginAs(Roles.EDITOR);
+        article(NewsStatus.DRAFT);
+        assertFails(() -> service.publish(NEWS_ID), HttpStatus.CONFLICT);
+
+        verify(eventPublisher, never()).publishEvent(any(Object.class));
+    }
+
     @Test
     void publish_editorAndAdmin_movePendingToPublished_andSetPublishedAt() {
         for (Roles role : List.of(Roles.EDITOR, Roles.ADMIN)) {
@@ -217,6 +289,16 @@ class NewsWorkflowServiceTest {
             assertThat(dto.getPublishedAt()).isEqualTo(news.getPublishedAt());
             assertHistory(NewsStatus.PENDING, NewsStatus.PUBLISHED, actor);
         }
+    }
+
+    @Test
+    void everyStatusChange_clearsTheLinkPreviewOfTheArticle() {
+        loginAs(Roles.EDITOR);
+        News news = article(NewsStatus.PENDING);
+
+        service.publish(NEWS_ID);
+
+        org.mockito.Mockito.verify(previewService).evictNews(news.getSlug());
     }
 
     @Test

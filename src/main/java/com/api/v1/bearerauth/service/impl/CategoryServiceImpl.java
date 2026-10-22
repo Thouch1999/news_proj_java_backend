@@ -2,6 +2,10 @@ package com.api.v1.bearerauth.service.impl;
 
 import com.api.v1.bearerauth.common.constant.MessageConstant;
 import com.api.v1.bearerauth.common.exception.CustomException;
+import com.api.v1.bearerauth.model.enumerate.ActivityAction;
+import com.api.v1.bearerauth.model.enumerate.ActivityTargetType;
+import com.api.v1.bearerauth.service.ActivityLogService;
+import com.api.v1.bearerauth.util.ActivityDetails;
 import com.api.v1.bearerauth.model.entity.Category;
 import com.api.v1.bearerauth.model.request.CategoryRequest;
 import com.api.v1.bearerauth.model.response.CategoryDto;
@@ -29,6 +33,7 @@ public class CategoryServiceImpl implements CategoryService {
     private final CategoryRepository categoryRepository;
     private final NewsRepository newsRepository;
     private final ModelMapper mapper;
+    private final ActivityLogService activityLogService;
 
     @Override
     public List<CategoryDto> findActive() {
@@ -68,7 +73,10 @@ public class CategoryServiceImpl implements CategoryService {
         category.setSlug(SlugUtil.resolve(request.getSlug(), name, this::slugTaken));
         category.setDescription(blankToNull(request.getDescription()));
         category.setActive(true);
-        return toAdminDto(categoryRepository.save(category), 0L);
+        Category saved = categoryRepository.save(category);
+        activityLogService.record(ActivityAction.CATEGORY_CREATED, ActivityTargetType.CATEGORY, saved.getId(), saved.getName(),
+                ActivityDetails.of("slug", saved.getSlug()));
+        return toAdminDto(saved, 0L);
     }
 
     @Override
@@ -80,6 +88,9 @@ public class CategoryServiceImpl implements CategoryService {
             throw new CustomException(HttpStatus.CONFLICT, MessageConstant.CATEGORY_NAME_EXISTS.getDefaultMessage());
         }
 
+        String nameBefore = category.getName();
+        String descriptionBefore = category.getDescription();
+        String slugBefore = category.getSlug();
         category.setName(name);
         category.setDescription(blankToNull(request.getDescription()));
         // renaming keeps the slug (links stay valid); it changes only when a different one is sent
@@ -88,15 +99,29 @@ public class CategoryServiceImpl implements CategoryService {
             category.setSlug(SlugUtil.resolve(requested, name,
                     slug -> RESERVED_SLUGS.contains(slug) || categoryRepository.existsBySlugAndIdNot(slug, id)));
         }
-        return toAdminDto(categoryRepository.save(category), newsRepository.countByCategoryId(id));
+        Category saved = categoryRepository.save(category);
+        ActivityDetails.Changes changes = new ActivityDetails.Changes()
+                .field("name", nameBefore, saved.getName())
+                .field("description", descriptionBefore, saved.getDescription())
+                .field("slug", slugBefore, saved.getSlug());
+        if (!changes.isEmpty()) {
+            activityLogService.record(ActivityAction.CATEGORY_UPDATED, ActivityTargetType.CATEGORY, saved.getId(), saved.getName(), changes.toDetails());
+        }
+        return toAdminDto(saved, newsRepository.countByCategoryId(id));
     }
 
     @Override
     @Transactional
     public CategoryDto setActive(Long id, boolean active) {
         Category category = find(id);
+        boolean before = category.isActive();
         category.setActive(active);
-        return toAdminDto(categoryRepository.save(category), newsRepository.countByCategoryId(id));
+        Category saved = categoryRepository.save(category);
+        if (before != active) {
+            activityLogService.record(ActivityAction.CATEGORY_UPDATED, ActivityTargetType.CATEGORY, saved.getId(), saved.getName(),
+                    new ActivityDetails.Changes().field("active", before, active).toDetails());
+        }
+        return toAdminDto(saved, newsRepository.countByCategoryId(id));
     }
 
     @Override
@@ -107,6 +132,8 @@ public class CategoryServiceImpl implements CategoryService {
             throw new CustomException(HttpStatus.CONFLICT, MessageConstant.CATEGORY_HAS_NEWS.getDefaultMessage());
         }
         categoryRepository.delete(category);
+        activityLogService.record(ActivityAction.CATEGORY_DELETED, ActivityTargetType.CATEGORY, id, category.getName(),
+                ActivityDetails.of("slug", category.getSlug()));
     }
 
     private boolean slugTaken(String slug) {

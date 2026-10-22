@@ -3,6 +3,10 @@ package com.api.v1.bearerauth.service.impl;
 import com.api.v1.bearerauth.common.constant.MessageConstant;
 import com.api.v1.bearerauth.common.exception.CustomException;
 import com.api.v1.bearerauth.common.response.TokenResponse;
+import com.api.v1.bearerauth.model.enumerate.ActivityAction;
+import com.api.v1.bearerauth.model.enumerate.ActivityTargetType;
+import com.api.v1.bearerauth.service.ActivityLogService;
+import com.api.v1.bearerauth.util.ActivityDetails;
 import com.api.v1.bearerauth.model.entity.AppUser;
 import com.api.v1.bearerauth.model.entity.AppUserToken;
 import com.api.v1.bearerauth.model.enumerate.OtpPurpose;
@@ -28,6 +32,10 @@ import com.api.v1.bearerauth.service.OtpService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.modelmapper.ModelMapper;
+import com.api.v1.bearerauth.service.NotificationEvent;
+import org.springframework.context.ApplicationEventPublisher;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.support.TransactionTemplate;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
@@ -47,6 +55,11 @@ public class AuthServiceImpl implements AuthService {
     private final CurrentUserService currentUserService;
     private final BCryptPasswordEncoder passwordEncoder;
     private final ModelMapper mapper;
+    private final ApplicationEventPublisher eventPublisher;
+    private final ActivityLogService activityLogService;
+    // for the writes that must be saved together with their activity log entry (the methods themselves are not
+    // transactional: a wrong OTP must still count as an attempt)
+    private final PlatformTransactionManager transactionManager;
 
     @Override
     public AppUserDto register(RegisterRequest request) {
@@ -76,9 +89,13 @@ public class AuthServiceImpl implements AuthService {
         otpService.verifyOtp(email, request.getOtp(), OtpPurpose.REGISTER);
 
         AppUser user = findUser(email);
+        boolean firstVerification = !user.isEmailVerified();
         user.setEmailVerified(true);
         appUserRepository.save(user);
         otpService.consume(email, OtpPurpose.REGISTER);
+        if (firstVerification) {
+            eventPublisher.publishEvent(NotificationEvent.newUser(user)); // the admins hear of a verified account, not of every sign-up
+        }
     }
 
     @Override
@@ -99,8 +116,12 @@ public class AuthServiceImpl implements AuthService {
         // same error for an unknown email and a wrong password, so accounts cannot be enumerated
         AppUser user = appUserRepository.findByEmail(email)
                 .filter(found -> passwordEncoder.matches(request.getPassword(), found.getPassword()))
-                .orElseThrow(() -> new CustomException(HttpStatus.UNAUTHORIZED, MessageConstant.INVALID_CREDENTIALS.getDefaultMessage()));
-        checkCanLogin(user);
+                .orElse(null);
+        if (user == null) {
+            failedLogin(request.getEmail(), "invalid credentials");
+            throw new CustomException(HttpStatus.UNAUTHORIZED, MessageConstant.INVALID_CREDENTIALS.getDefaultMessage());
+        }
+        checkCanLoginOrLog(user, request.getEmail());
 
         if (user.getRole() == Roles.READER) {
             return loginResult(user);
@@ -112,10 +133,15 @@ public class AuthServiceImpl implements AuthService {
     @Override
     public LoginDto verifyLoginOtp(VerifyOtpRequest request) {
         String email = normalize(request.getEmail());
-        otpService.verifyOtp(email, request.getOtp(), OtpPurpose.LOGIN);
+        try {
+            otpService.verifyOtp(email, request.getOtp(), OtpPurpose.LOGIN);
+        } catch (CustomException e) {
+            failedLogin(request.getEmail(), "invalid otp"); // the code that was typed is never kept
+            throw e;
+        }
 
         AppUser user = findUser(email);
-        checkCanLogin(user);
+        checkCanLoginOrLog(user, request.getEmail());
         otpService.consume(email, OtpPurpose.LOGIN);
         return loginResult(user);
     }
@@ -149,7 +175,7 @@ public class AuthServiceImpl implements AuthService {
 
         AppUser user = findUser(email);
         user.setPassword(passwordEncoder.encode(request.getPassword()));
-        appUserRepository.save(user);
+        savePasswordWithLog(user, "reset");
         otpService.consume(email, OtpPurpose.RESET_PASSWORD);
         revokeRefreshTokens(user);
     }
@@ -164,7 +190,7 @@ public class AuthServiceImpl implements AuthService {
         }
 
         user.setPassword(passwordEncoder.encode(request.getPassword()));
-        appUserRepository.save(user);
+        savePasswordWithLog(user, "change");
         revokeRefreshTokens(user);
     }
 
@@ -199,7 +225,31 @@ public class AuthServiceImpl implements AuthService {
         }
     }
 
+    // the new password and its PASSWORD_CHANGED entry are saved together (the entry never holds the password)
+    private void savePasswordWithLog(AppUser user, String method) {
+        new TransactionTemplate(transactionManager).executeWithoutResult(status -> {
+            appUserRepository.save(user);
+            activityLogService.recordFor(user, ActivityAction.PASSWORD_CHANGED, ActivityTargetType.AUTH, user.getId(),
+                    user.getEmail(), ActivityDetails.of("method", method));
+        });
+    }
+
+    // a failed login has no transaction: it is written on its own (the typed email is the label; no password is ever read)
+    private void failedLogin(String typedEmail, String reason) {
+        activityLogService.recordLogin(ActivityAction.LOGIN_FAILED, null, typedEmail, ActivityDetails.of("reason", reason));
+    }
+
+    private void checkCanLoginOrLog(AppUser user, String typedEmail) {
+        try {
+            checkCanLogin(user);
+        } catch (CustomException e) {
+            failedLogin(typedEmail, user.isActive() ? "email not verified" : "account disabled");
+            throw e;
+        }
+    }
+
     private LoginDto loginResult(AppUser user) {
+        activityLogService.recordLogin(ActivityAction.LOGIN_SUCCESS, user, user.getEmail(), null);
         TokenResponse token = jwtService.generateAccess(user);
 
         AppUserToken appUserToken = new AppUserToken();

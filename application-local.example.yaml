@@ -1,6 +1,6 @@
 # Copy this file to application-local.yaml (it is git-ignored) and fill in your own values.
 # Environment variables work too: MAIL_USERNAME, MAIL_PASSWORD, JWT_SECRET, DB_USERNAME, DB_PASSWORD,
-# SEED_ADMIN_PASSWORD, SEED_EDITOR_PASSWORD, SEED_AUTHOR_PASSWORD, SEED_READER_PASSWORD.
+# FRONTEND_URL (public URL of the React site), PUBLIC_BASE_URL (public URL of this backend), SEED_ADMIN_PASSWORD, SEED_EDITOR_PASSWORD, SEED_AUTHOR_PASSWORD, SEED_READER_PASSWORD, SEED_SUPER_ADMIN_PASSWORD, SUPER_ADMIN_EMAIL (the user marked as super admin on the first start).
 spring:
   mail:
     username: your-address@gmail.com

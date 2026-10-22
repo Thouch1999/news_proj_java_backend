@@ -1,5 +1,8 @@
 # Settings that apply only when the "dev" Spring profile is active (SPRING_PROFILES_ACTIVE=dev)
 app:
+  # the local React site and this backend, for the link previews (/preview/**); FRONTEND_URL / PUBLIC_BASE_URL win
+  frontend-url: ${FRONTEND_URL:http://localhost:5173}
+  public-base-url: ${PUBLIC_BASE_URL:http://localhost:8080}
   seed:
     # insert the 20 demo news articles once (db/seed/dev/seed_news_20.sql); set to false to switch it off
     demo-news: true

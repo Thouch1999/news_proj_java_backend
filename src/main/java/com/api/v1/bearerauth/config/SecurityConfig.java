@@ -77,11 +77,18 @@ public class SecurityConfig {
                                 // system settings: everybody reads the public ones, only the admin reads all and changes them
                                 .requestMatchers(HttpMethod.GET, "/api/v1/settings/public").permitAll()
                                 .requestMatchers("/api/v1/settings/**").hasRole("ADMIN")
+                                // notifications: any logged-in user, only their own (scoped in NotificationService)
+                                .requestMatchers("/api/v1/notifications/**").authenticated()
+                                // activity log: the editors read only the content feed, everything else is for the admin (read only)
+                                .requestMatchers(HttpMethod.GET, "/api/v1/activity-logs/recent").hasAnyRole("EDITOR", "ADMIN")
+                                .requestMatchers("/api/v1/activity-logs/**").hasRole("ADMIN")
                                 .requestMatchers(HttpMethod.GET, "/api/v1/categories/admin").hasRole("ADMIN")
                                 .requestMatchers(HttpMethod.GET, "/api/v1/categories", "/api/v1/categories/*",
                                         "/api/v1/tags", "/api/v1/tags/*").permitAll()
                                 .requestMatchers("/api/v1/categories/**", "/api/v1/tags/**").hasRole("ADMIN")
                                 .requestMatchers(HttpMethod.GET, "/uploads/**").permitAll()
+                                // link previews (Open Graph pages for Facebook, Telegram ...): HTML, no login
+                                .requestMatchers(HttpMethod.GET, "/preview", "/preview/**").permitAll()
                                 // article management; the public reading endpoints are added in a later step
                                 // public reading: readers need no login
                                 .requestMatchers(HttpMethod.GET, "/api/v1/public/**").permitAll()

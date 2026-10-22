@@ -5,6 +5,7 @@ import com.api.v1.bearerauth.model.request.AdminCreateUserRequest;
 import com.api.v1.bearerauth.model.request.AdminResetPasswordRequest;
 import com.api.v1.bearerauth.model.request.AppUserAddRequest;
 import com.api.v1.bearerauth.model.request.ChangeRoleRequest;
+import com.api.v1.bearerauth.model.request.TransferSuperAdminRequest;
 import com.api.v1.bearerauth.model.request.UpdateProfileRequest;
 import com.api.v1.bearerauth.model.response.AppUserDto;
 import org.springframework.data.domain.Page;
@@ -29,7 +30,7 @@ public interface AppUserService extends UserDetailsService {
 
     AppUserDto findById(Long id);
 
-    /** Creates an AUTHOR or EDITOR account that is active and email-verified. */
+    /** Creates an account with any role (ADMIN, EDITOR, AUTHOR or READER) that is active and email-verified. */
     AppUserDto createStaff(AdminCreateUserRequest request);
 
     /** Activates or deactivates a user; an admin cannot deactivate themselves. */
@@ -39,4 +40,10 @@ public interface AppUserService extends UserDetailsService {
     AppUserDto changeRole(Long id, ChangeRoleRequest request);
 
     void resetPassword(Long id, AdminResetPasswordRequest request);
+
+    /**
+     * Super admin only: moves the super admin mark to another active, email-verified ADMIN after checking the
+     * current password of the super admin. Returns the new super admin.
+     */
+    AppUserDto transferSuperAdmin(TransferSuperAdminRequest request);
 }

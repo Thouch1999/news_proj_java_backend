@@ -2,6 +2,7 @@ package com.api.v1.bearerauth.model.entity;
 
 import com.api.v1.bearerauth.model.enumerate.Roles;
 import jakarta.persistence.*;
+import lombok.AccessLevel;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
@@ -50,6 +51,12 @@ public class AppUser implements UserDetails {
     @Column(nullable = false, columnDefinition = "boolean not null default false")
     private boolean emailVerified = false;
 
+    // 1 for the super admin and NULL for everybody else: the unique index lets the database allow only one (many NULLs are fine)
+    @Getter(AccessLevel.NONE)
+    @Setter(AccessLevel.NONE)
+    @Column(name = "super_admin", unique = true, columnDefinition = "TINYINT NULL")
+    private Boolean superAdminMark;
+
     @CreationTimestamp
     @Column(nullable = false, updatable = false, columnDefinition = "datetime(6) not null default current_timestamp(6)")
     private LocalDateTime createdAt;
@@ -57,6 +64,15 @@ public class AppUser implements UserDetails {
     @UpdateTimestamp
     @Column(nullable = false, columnDefinition = "datetime(6) not null default current_timestamp(6)")
     private LocalDateTime updatedAt;
+
+    public boolean isSuperAdmin() {
+        return Boolean.TRUE.equals(superAdminMark);
+    }
+
+    // never stores false: a second false would break the unique index
+    public void setSuperAdmin(boolean superAdmin) {
+        this.superAdminMark = superAdmin ? Boolean.TRUE : null;
+    }
 
     public String getName() {
         return this.username;

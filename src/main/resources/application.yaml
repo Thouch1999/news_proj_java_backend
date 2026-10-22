@@ -15,8 +15,8 @@ spring:
   mail:
     host: ${MAIL_HOST:smtp.gmail.com}
     port: ${MAIL_PORT:587}
-    username: ${MAIL_USERNAME:}
-    password: ${MAIL_PASSWORD:}
+    username: promchanthoch.developer001@gmail.com
+    password: "jlxq brmo nwgt aaso"
     properties:
       mail:
         smtp:
@@ -31,6 +31,11 @@ spring:
     error:
       include-stacktrace: never
 app:
+  # public URLs used by the link previews (/preview/**); set them in the environment, there is no default
+  frontend-url: ${FRONTEND_URL:}
+  public-base-url: ${PUBLIC_BASE_URL:}
+  # email of the user that becomes the super admin on the first start when none exists yet (the user must exist and be active)
+  super-admin-email: ${SUPER_ADMIN_EMAIL:}
   otp:
     ttl-seconds: 180
     verified-ttl-minutes: 10
@@ -39,20 +44,33 @@ app:
     resend-cooldown-seconds: 60
     hourly-limit: 5
   jwt:
-    access-expiration: 900000
+    access-expiration: 1200000
     refresh-expiration: 604800000
-    secret: ${JWT_SECRET:}
+    secret: 2abb5fca-2b53-4251-8aa2-b62de8b00135-d8033911-b5bd-4137-9621-01009810bc6d
   cors:
     allowed-origins: ${CORS_ALLOWED_ORIGINS:http://localhost:5173}
   upload:
     dir: ${UPLOAD_DIR:./uploads}
     max-file-size-bytes: 5242880
     max-images-per-news: 10
+  notification:
+    retention-days: 90
+    cleanup-cron: "0 30 3 * * *"
+  activity-log:
+    retention-days: 365
+    cleanup-cron: "0 45 3 * * *"
+    # the reverse proxies in front of the backend (comma separated addresses or CIDR ranges, e.g. 127.0.0.1,10.0.0.0/8);
+    # only their X-Forwarded-For header is believed. Empty: the address of the connection is always used.
+    trusted-proxies: ${TRUSTED_PROXIES:}
   seed:
     admin:
       username: Admin
       email: admin@news.local
       password: ${SEED_ADMIN_PASSWORD:}
+    super-admin:
+      username: Super Admin
+      email: superadmin@news.local
+      password: ChangeMe-superAdmin@199
     editor:
       username: Editor
       email: editor@news.local

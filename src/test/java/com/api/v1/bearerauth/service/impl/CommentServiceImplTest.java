@@ -2,6 +2,8 @@ package com.api.v1.bearerauth.service.impl;
 
 import com.api.v1.bearerauth.common.exception.CustomException;
 import com.api.v1.bearerauth.model.entity.AppUser;
+import com.api.v1.bearerauth.model.enumerate.NotificationType;
+import com.api.v1.bearerauth.service.NotificationEvent;
 import com.api.v1.bearerauth.model.entity.Category;
 import com.api.v1.bearerauth.model.entity.Comment;
 import com.api.v1.bearerauth.model.entity.News;
@@ -45,6 +47,7 @@ class CommentServiceImplTest {
     private static final long NEWS_ID = 10L;
     private static final long ME = 1L;
     private static final long OTHER = 2L;
+    private static final long AUTHOR = 50L;
 
     @Mock
     private CommentRepository commentRepository;
@@ -54,13 +57,18 @@ class CommentServiceImplTest {
     private AppUserRepository appUserRepository;
     @Mock
     private CurrentUserService currentUserService;
+    @Mock
+    private org.springframework.context.ApplicationEventPublisher eventPublisher;
 
     private CommentServiceImpl service;
     private AppUser me;
 
+    @Mock
+    private com.api.v1.bearerauth.service.ActivityLogService activityLogService;
+
     @BeforeEach
     void setUp() {
-        service = new CommentServiceImpl(commentRepository, newsRepository, appUserRepository, currentUserService);
+        service = new CommentServiceImpl(commentRepository, newsRepository, appUserRepository, currentUserService, eventPublisher, activityLogService);
         loginAs(Roles.READER);
         lenient().when(commentRepository.save(any(Comment.class))).thenAnswer(call -> {
             Comment comment = call.getArgument(0);
@@ -96,6 +104,7 @@ class CommentServiceImplTest {
         news.setStatus(status);
         news.setCategory(category);
         news.setCommentsEnabled(commentsEnabled);
+        news.setAuthor(user(AUTHOR, Roles.AUTHOR));
         lenient().when(newsRepository.findById(NEWS_ID)).thenReturn(Optional.of(news));
         return news;
     }
@@ -353,6 +362,42 @@ class CommentServiceImplTest {
             assertThat(service.unhide(5L).getStatus()).isEqualTo(CommentStatus.VISIBLE);
             assertThat(comment.getStatus()).isEqualTo(CommentStatus.VISIBLE);
         }
+    }
+
+    @Test
+    void hide_notifiesTheCommentsAuthor_butUnhideAndAnAlreadyHiddenCommentDoNot() {
+        loginAs(Roles.EDITOR);
+        comment(5, user(OTHER, Roles.READER), CommentStatus.VISIBLE);
+
+        service.hide(5L);
+
+        ArgumentCaptor<NotificationEvent> event = ArgumentCaptor.forClass(NotificationEvent.class);
+        verify(eventPublisher).publishEvent(event.capture());
+        assertThat(event.getValue().type()).isEqualTo(NotificationType.COMMENT_HIDDEN);
+        assertThat(event.getValue().recipientId()).isEqualTo(OTHER);
+        assertThat(event.getValue().actorId()).isEqualTo(ME);
+        assertThat(event.getValue().commentId()).isEqualTo(5L);
+
+        org.mockito.Mockito.clearInvocations(eventPublisher);
+        service.unhide(5L);
+        service.hide(5L);
+        service.hide(5L); // already hidden
+        verify(eventPublisher, org.mockito.Mockito.times(1)).publishEvent(any(Object.class));
+    }
+
+    @Test
+    void create_notifiesTheArticlesAuthor_withTheCommenterAsActor() {
+        published();
+
+        service.create(NEWS_ID, request("hello"));
+
+        ArgumentCaptor<NotificationEvent> event = ArgumentCaptor.forClass(NotificationEvent.class);
+        verify(eventPublisher).publishEvent(event.capture());
+        assertThat(event.getValue().type()).isEqualTo(NotificationType.NEW_COMMENT);
+        assertThat(event.getValue().recipientId()).isEqualTo(AUTHOR);
+        assertThat(event.getValue().actorId()).isEqualTo(ME);
+        assertThat(event.getValue().newsId()).isEqualTo(NEWS_ID);
+        assertThat(event.getValue().commentId()).isEqualTo(99L);
     }
 
     @Test

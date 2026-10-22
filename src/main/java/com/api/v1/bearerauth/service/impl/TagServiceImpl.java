@@ -2,6 +2,10 @@ package com.api.v1.bearerauth.service.impl;
 
 import com.api.v1.bearerauth.common.constant.MessageConstant;
 import com.api.v1.bearerauth.common.exception.CustomException;
+import com.api.v1.bearerauth.model.enumerate.ActivityAction;
+import com.api.v1.bearerauth.model.enumerate.ActivityTargetType;
+import com.api.v1.bearerauth.service.ActivityLogService;
+import com.api.v1.bearerauth.util.ActivityDetails;
 import com.api.v1.bearerauth.model.entity.Tag;
 import com.api.v1.bearerauth.model.request.TagRequest;
 import com.api.v1.bearerauth.model.response.TagDto;
@@ -23,6 +27,7 @@ public class TagServiceImpl implements TagService {
     private final TagRepository tagRepository;
     private final NewsTagRepository newsTagRepository;
     private final ModelMapper mapper;
+    private final ActivityLogService activityLogService;
 
     @Override
     public List<TagDto> findAll() {
@@ -49,7 +54,10 @@ public class TagServiceImpl implements TagService {
         Tag tag = new Tag();
         tag.setName(name);
         tag.setSlug(SlugUtil.resolve(request.getSlug(), name, tagRepository::existsBySlug));
-        return mapper.map(tagRepository.save(tag), TagDto.class);
+        Tag saved = tagRepository.save(tag);
+        activityLogService.record(ActivityAction.TAG_CREATED, ActivityTargetType.TAG, saved.getId(), saved.getName(),
+                ActivityDetails.of("slug", saved.getSlug()));
+        return mapper.map(saved, TagDto.class);
     }
 
     @Override
@@ -61,13 +69,22 @@ public class TagServiceImpl implements TagService {
             throw new CustomException(HttpStatus.CONFLICT, MessageConstant.TAG_NAME_EXISTS.getDefaultMessage());
         }
 
+        String nameBefore = tag.getName();
+        String slugBefore = tag.getSlug();
         tag.setName(name);
         // renaming keeps the slug (links stay valid); it changes only when a different one is sent
         String requested = request.getSlug();
         if (requested != null && !requested.isBlank() && !requested.trim().equals(tag.getSlug())) {
             tag.setSlug(SlugUtil.resolve(requested, name, slug -> tagRepository.existsBySlugAndIdNot(slug, id)));
         }
-        return mapper.map(tagRepository.save(tag), TagDto.class);
+        Tag saved = tagRepository.save(tag);
+        ActivityDetails.Changes changes = new ActivityDetails.Changes()
+                .field("name", nameBefore, saved.getName())
+                .field("slug", slugBefore, saved.getSlug());
+        if (!changes.isEmpty()) {
+            activityLogService.record(ActivityAction.TAG_UPDATED, ActivityTargetType.TAG, saved.getId(), saved.getName(), changes.toDetails());
+        }
+        return mapper.map(saved, TagDto.class);
     }
 
     @Override
@@ -76,6 +93,8 @@ public class TagServiceImpl implements TagService {
         Tag tag = find(id);
         newsTagRepository.deleteAllByTagId(id);
         tagRepository.delete(tag);
+        activityLogService.record(ActivityAction.TAG_DELETED, ActivityTargetType.TAG, id, tag.getName(),
+                ActivityDetails.of("slug", tag.getSlug()));
     }
 
     private Tag find(Long id) {

@@ -2,6 +2,10 @@ package com.api.v1.bearerauth.service.impl;
 
 import com.api.v1.bearerauth.common.constant.MessageConstant;
 import com.api.v1.bearerauth.common.exception.CustomException;
+import com.api.v1.bearerauth.model.enumerate.ActivityAction;
+import com.api.v1.bearerauth.model.enumerate.ActivityTargetType;
+import com.api.v1.bearerauth.service.ActivityLogService;
+import com.api.v1.bearerauth.util.ActivityDetails;
 import com.api.v1.bearerauth.model.entity.AppUser;
 import com.api.v1.bearerauth.model.entity.Comment;
 import com.api.v1.bearerauth.model.entity.News;
@@ -17,6 +21,8 @@ import com.api.v1.bearerauth.security.CurrentUserService;
 import com.api.v1.bearerauth.service.CommentService;
 import jakarta.transaction.Transactional;
 import lombok.RequiredArgsConstructor;
+import com.api.v1.bearerauth.service.NotificationEvent;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
@@ -35,6 +41,8 @@ public class CommentServiceImpl implements CommentService {
     private final NewsRepository newsRepository;
     private final AppUserRepository appUserRepository;
     private final CurrentUserService currentUserService;
+    private final ApplicationEventPublisher eventPublisher;
+    private final ActivityLogService activityLogService;
 
     @Override
     @Transactional
@@ -62,6 +70,7 @@ public class CommentServiceImpl implements CommentService {
         comment.setContent(content);
         comment.setStatus(CommentStatus.VISIBLE);
         Comment saved = commentRepository.save(comment);
+        eventPublisher.publishEvent(NotificationEvent.newComment(user, news, saved)); // to the article's author, not to themselves
         return toDto(saved, user);
     }
 
@@ -75,6 +84,8 @@ public class CommentServiceImpl implements CommentService {
             throw new CustomException(HttpStatus.FORBIDDEN, MessageConstant.INSUFFICIENT_PERMISSIONS.getDefaultMessage());
         }
         commentRepository.delete(comment);
+        activityLogService.record(ActivityAction.COMMENT_DELETED, ActivityTargetType.COMMENT, id, comment.getNews().getTitle(),
+                ActivityDetails.of("newsId", comment.getNews().getId(), "commentAuthorId", comment.getUser().getId(), "ownComment", own));
     }
 
     @Override
@@ -97,11 +108,17 @@ public class CommentServiceImpl implements CommentService {
     }
 
     private CommentDto setStatus(Long id, CommentStatus status) {
-        requireStaff();
+        AppUser actor = requireStaff();
         Comment comment = find(id);
         if (comment.getStatus() != status) {
             comment.setStatus(status);
             comment = commentRepository.save(comment);
+            activityLogService.record(status == CommentStatus.HIDDEN ? ActivityAction.COMMENT_HIDDEN : ActivityAction.COMMENT_SHOWN,
+                    ActivityTargetType.COMMENT, comment.getId(), comment.getNews().getTitle(),
+                    ActivityDetails.of("newsId", comment.getNews().getId(), "commentAuthorId", comment.getUser().getId()));
+            if (status == CommentStatus.HIDDEN) {
+                eventPublisher.publishEvent(NotificationEvent.commentHidden(actor, comment.getNews(), comment));
+            }
         }
         return toDto(comment);
     }
@@ -127,10 +144,12 @@ public class CommentServiceImpl implements CommentService {
         return user.getRole() == Roles.ADMIN || user.getRole() == Roles.EDITOR;
     }
 
-    private void requireStaff() {
-        if (!isStaff(currentUserService.getCurrentUser())) {
+    private AppUser requireStaff() {
+        AppUser user = currentUserService.getCurrentUser();
+        if (!isStaff(user)) {
             throw new CustomException(HttpStatus.FORBIDDEN, MessageConstant.INSUFFICIENT_PERMISSIONS.getDefaultMessage());
         }
+        return user;
     }
 
     private Pageable pageable(int page, int size) {

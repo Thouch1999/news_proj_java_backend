@@ -117,6 +117,53 @@ class AdminAccessControlTest {
         mockMvc.perform(get("/api/v1/roles")).andExpect(status().isOk());
     }
 
+    private static String createBody(String role) {
+        return "{\"username\":\"New Person\",\"email\":\"new@news.local\",\"password\":\"Password-123\",\"confirm\":\"Password-123\",\"role\":" + role + "}";
+    }
+
+    @Test
+    @WithMockUser(roles = "ADMIN")
+    void admin_canCreateAUserWithEachOfTheFourRoles() throws Exception {
+        when(appUserService.createStaff(any())).thenReturn(new AppUserDto());
+
+        for (String role : List.of("ADMIN", "EDITOR", "AUTHOR", "READER")) {
+            mockMvc.perform(post("/api/v1/users").contentType(MediaType.APPLICATION_JSON).content(createBody("\"" + role + "\"")))
+                    .andExpect(status().isOk())
+                    .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath("$.code").value(201));
+        }
+        org.mockito.ArgumentCaptor<com.api.v1.bearerauth.model.request.AdminCreateUserRequest> sent =
+                org.mockito.ArgumentCaptor.forClass(com.api.v1.bearerauth.model.request.AdminCreateUserRequest.class);
+        org.mockito.Mockito.verify(appUserService, org.mockito.Mockito.times(4)).createStaff(sent.capture());
+        org.assertj.core.api.Assertions.assertThat(sent.getAllValues()).extracting("role")
+                .containsExactly(com.api.v1.bearerauth.model.enumerate.Roles.ADMIN, com.api.v1.bearerauth.model.enumerate.Roles.EDITOR,
+                        com.api.v1.bearerauth.model.enumerate.Roles.AUTHOR, com.api.v1.bearerauth.model.enumerate.Roles.READER);
+    }
+
+    @Test
+    @WithMockUser(roles = "ADMIN")
+    void admin_anUnknownOrMissingRole_isRejected_andNothingIsCreated() throws Exception {
+        // the project's convention: an unreadable or invalid body answers 200 with the real code (400) in the body
+        for (String role : List.of("\"SUPERUSER\"", "\"admin\"", "\"\"", "null", "7")) {
+            mockMvc.perform(post("/api/v1/users").contentType(MediaType.APPLICATION_JSON).content(createBody(role)))
+                    .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath("$.code").value(400));
+        }
+        mockMvc.perform(post("/api/v1/users").contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"username\":\"New Person\",\"email\":\"new@news.local\",\"password\":\"Password-123\",\"confirm\":\"Password-123\"}"))
+                .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath("$.code").value(400));
+
+        org.mockito.Mockito.verify(appUserService, org.mockito.Mockito.never()).createStaff(any());
+    }
+
+    @Test
+    @WithMockUser(roles = {"EDITOR", "AUTHOR", "READER"})
+    void nonAdmins_stillCannotCreateAnyRole() throws Exception {
+        for (String role : List.of("ADMIN", "EDITOR", "AUTHOR", "READER")) {
+            mockMvc.perform(post("/api/v1/users").contentType(MediaType.APPLICATION_JSON).content(createBody("\"" + role + "\"")))
+                    .andExpect(status().isForbidden());
+        }
+        org.mockito.Mockito.verify(appUserService, org.mockito.Mockito.never()).createStaff(any());
+    }
+
     @Test
     @WithMockUser(roles = "READER")
     void anyLoggedInUser_canReachOwnProfile() throws Exception {

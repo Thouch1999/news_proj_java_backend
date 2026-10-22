@@ -95,10 +95,13 @@ class NewsServiceImplTest {
     private NewsServiceImpl service;
     private AppUser me;
 
+    @Mock
+    private com.api.v1.bearerauth.service.ActivityLogService activityLogService;
+
     @BeforeEach
     void setUp() {
         service = new NewsServiceImpl(newsRepository, newsTagRepository, newsImageRepository, newsStatusHistoryRepository,
-                commentRepository, bookmarkRepository, newsViewRepository, categoryRepository, tagRepository, appUserRepository, currentUserService, fileStorageService, appProperty, systemSettingService);
+                commentRepository, bookmarkRepository, newsViewRepository, categoryRepository, tagRepository, appUserRepository, currentUserService, fileStorageService, appProperty, systemSettingService, org.mockito.Mockito.mock(org.springframework.context.ApplicationEventPublisher.class), org.mockito.Mockito.mock(com.api.v1.bearerauth.service.PreviewService.class), activityLogService);
         lenient().when(systemSettingService.isCommentsEnabledDefault()).thenReturn(true);
         me = user(ME);
         me.setRole(Roles.AUTHOR);

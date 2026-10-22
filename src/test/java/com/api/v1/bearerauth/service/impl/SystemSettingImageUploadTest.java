@@ -59,12 +59,15 @@ class SystemSettingImageUploadTest {
 
     private SystemSettingServiceImpl service;
 
+    @Mock
+    private com.api.v1.bearerauth.service.ActivityLogService activityLogService;
+
     @BeforeEach
     void setUp() {
         AppProperty properties = new AppProperty();
         properties.getUpload().setDir(folder.toString());
         service = new SystemSettingServiceImpl(systemSettingRepository, appUserRepository, currentUserService,
-                new LocalFileStorageServiceImpl(properties), new CacheConfig().cacheManager());
+                new LocalFileStorageServiceImpl(properties), new CacheConfig().cacheManager(), activityLogService);
         AppUser admin = new AppUser();
         admin.setId(1L);
         lenient().when(currentUserService.getCurrentUser()).thenReturn(admin);

@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org" th:lang="${page.language}" lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title th:text="${page.pageTitle}">Title</title>
+    <meta name="description" th:if="${!#strings.isEmpty(page.description)}" th:content="${page.description}">
+    <link rel="canonical" th:href="${page.url}">
+
+    <meta property="og:type" th:content="${page.ogType}">
+    <meta property="og:site_name" th:content="${page.siteName}">
+    <meta property="og:title" th:content="${page.title}">
+    <meta property="og:description" th:if="${!#strings.isEmpty(page.description)}" th:content="${page.description}">
+    <meta property="og:url" th:content="${page.url}">
+    <meta property="og:locale" th:content="${page.locale}">
+    <meta property="og:image" th:if="${page.imageUrl != null}" th:content="${page.imageUrl}">
+    <meta property="og:image:width" th:if="${page.imageUrl != null and page.imageWidth != null}" th:content="${page.imageWidth}">
+    <meta property="og:image:height" th:if="${page.imageUrl != null and page.imageHeight != null}" th:content="${page.imageHeight}">
+    <meta property="og:image:alt" th:if="${page.imageUrl != null}" th:content="${page.imageAlt}">
+
+    <meta property="article:published_time" th:if="${page.publishedTime != null}" th:content="${page.publishedTime}">
+    <meta property="article:modified_time" th:if="${page.modifiedTime != null}" th:content="${page.modifiedTime}">
+    <meta property="article:section" th:if="${page.section != null}" th:content="${page.section}">
+    <meta property="article:tag" th:each="tag : ${page.tags}" th:content="${tag}">
+
+    <meta name="twitter:card" content="summary_large_image">
+    <meta name="twitter:title" th:content="${page.title}">
+    <meta name="twitter:description" th:if="${!#strings.isEmpty(page.description)}" th:content="${page.description}">
+    <meta name="twitter:image" th:if="${page.imageUrl != null}" th:content="${page.imageUrl}">
+
+    <!-- a person who opens this address goes on to the React page; bots read the head and ignore this -->
+    <meta http-equiv="refresh" th:content="${'0;url=' + page.url}">
+</head>
+<body>
+<h1 th:text="${page.title}">Title</h1>
+<p th:if="${!#strings.isEmpty(page.description)}" th:text="${page.description}">Summary</p>
+<p><a th:href="${page.url}">Read the article</a></p>
+</body>
+</html>

@@ -6,6 +6,7 @@ import com.api.v1.bearerauth.model.enumerate.Roles;
 import com.api.v1.bearerauth.model.request.AdminCreateUserRequest;
 import com.api.v1.bearerauth.model.request.AdminResetPasswordRequest;
 import com.api.v1.bearerauth.model.request.ChangeRoleRequest;
+import com.api.v1.bearerauth.model.request.TransferSuperAdminRequest;
 import com.api.v1.bearerauth.model.request.UpdateProfileRequest;
 import com.api.v1.bearerauth.model.response.AppUserDto;
 import com.api.v1.bearerauth.service.AppUserService;
@@ -113,5 +114,13 @@ public class AppUserController {
                                                                @Valid @RequestBody AdminResetPasswordRequest request) {
         appUserService.resetPassword(id, request);
         return ResponseEntity.ok(ApiResponseUtil.success(HttpStatus.OK));
+    }
+
+    // only the super admin may call it: checked in the service (the route is open to every admin)
+    @PostMapping("/super-admin/transfer")
+    public ResponseEntity<SuccessResponse<AppUserDto>> transferSuperAdmin(@Valid @RequestBody TransferSuperAdminRequest request) {
+        return ResponseEntity.ok(
+                ApiResponseUtil.success(HttpStatus.OK, appUserService.transferSuperAdmin(request))
+        );
     }
 }
