@@ -44,7 +44,7 @@ app:
     resend-cooldown-seconds: 60
     hourly-limit: 5
   jwt:
-    access-expiration: 1200000
+    access-expiration: 3600000
     refresh-expiration: 604800000
     secret: 2abb5fca-2b53-4251-8aa2-b62de8b00135-d8033911-b5bd-4137-9621-01009810bc6d
   cors:
