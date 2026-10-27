@@ -85,6 +85,20 @@ public enum MessageConstant {
     SETTING_IMAGE_TYPE_UNKNOWN("SETTING_IMAGE_TYPE_UNKNOWN", HttpStatus.NOT_FOUND, "Unknown settings image"),
     SETTING_IMAGE_TYPE_NOT_ALLOWED("SETTING_IMAGE_TYPE_NOT_ALLOWED", HttpStatus.UNSUPPORTED_MEDIA_TYPE, "Only PNG, JPG and WebP images are allowed (a favicon may also be ICO)"),
     SETTING_IMAGE_TOO_LARGE("SETTING_IMAGE_TOO_LARGE", HttpStatus.BAD_REQUEST, "The image is too large (2 MB at most)"),
+    SPONSOR_NOT_FOUND("SPONSOR_NOT_FOUND", HttpStatus.NOT_FOUND, "Sponsor not found"),
+    SPONSOR_CREATIVE_NOT_FOUND("SPONSOR_CREATIVE_NOT_FOUND", HttpStatus.NOT_FOUND, "The sponsor has no image for this placement"),
+    SPONSOR_IMAGE_IN_USE("SPONSOR_IMAGE_IN_USE", HttpStatus.BAD_REQUEST, "This image is used by a chosen place: uncheck the place first"),
+    SPONSOR_PLACEMENT_INVALID("SPONSOR_PLACEMENT_INVALID", HttpStatus.BAD_REQUEST, "Unknown placement"),
+    SPONSOR_STATUS_INVALID("SPONSOR_STATUS_INVALID", HttpStatus.BAD_REQUEST, "Status must be active, scheduled, ended or inactive"),
+    SPONSOR_STATS_RANGE_INVALID("SPONSOR_STATS_RANGE_INVALID", HttpStatus.BAD_REQUEST, "The date range is not valid (from must not be after to, 366 days at most)"),
+    SPONSOR_IMAGE_TYPE_NOT_ALLOWED("SPONSOR_IMAGE_TYPE_NOT_ALLOWED", HttpStatus.UNSUPPORTED_MEDIA_TYPE, "Only PNG, JPG and WebP images are allowed"),
+    SPONSOR_IMAGE_TOO_LARGE("SPONSOR_IMAGE_TOO_LARGE", HttpStatus.BAD_REQUEST, "The image is too large (2 MB at most)"),
+    SPONSOR_VIDEO_TYPE_NOT_ALLOWED("SPONSOR_VIDEO_TYPE_NOT_ALLOWED", HttpStatus.UNSUPPORTED_MEDIA_TYPE, "Only MP4 (H.264) and WebM videos are allowed"),
+    SPONSOR_VIDEO_TOO_LARGE("SPONSOR_VIDEO_TOO_LARGE", HttpStatus.BAD_REQUEST, "The video is too large (15 MB at most)"),
+    SPONSOR_VIDEO_TOO_LONG("SPONSOR_VIDEO_TOO_LONG", HttpStatus.BAD_REQUEST, "The video is too long (30 seconds at most)"),
+    SPONSOR_VIDEO_NOT_FOUND("SPONSOR_VIDEO_NOT_FOUND", HttpStatus.NOT_FOUND, "The sponsor has no video for this placement"),
+    SPONSOR_LOGO_NOT_FOUND("SPONSOR_LOGO_NOT_FOUND", HttpStatus.NOT_FOUND, "The sponsor has no logo"),
+    SPONSOR_MEDIA_NOT_ALLOWED("SPONSOR_MEDIA_NOT_ALLOWED", HttpStatus.BAD_REQUEST, "This kind of media can not be used in this placement"),
     NOTIFICATION_NOT_FOUND("NOTIFICATION_NOT_FOUND", HttpStatus.NOT_FOUND, "Notification not found"),
     ACTIVITY_LOG_NOT_FOUND("ACTIVITY_LOG_NOT_FOUND", HttpStatus.NOT_FOUND, "Activity log entry not found"),
     CURRENT_PASSWORD_INCORRECT("CURRENT_PASSWORD_INCORRECT", HttpStatus.BAD_REQUEST, "Current password is incorrect"),
@@ -95,7 +109,14 @@ public enum MessageConstant {
     OTP_ATTEMPTS_EXCEEDED("OTP_ATTEMPTS_EXCEEDED", HttpStatus.TOO_MANY_REQUESTS, "Too many wrong attempts, please request a new OTP"),
     OTP_RESEND_COOLDOWN("OTP_RESEND_COOLDOWN", HttpStatus.TOO_MANY_REQUESTS, "Please wait before requesting another OTP"),
     OTP_RESEND_LIMIT_EXCEEDED("OTP_RESEND_LIMIT_EXCEEDED", HttpStatus.TOO_MANY_REQUESTS, "OTP request limit reached, please try again later"),
-    EMAIL_NOT_VERIFIED("EMAIL_NOT_VERIFIED", HttpStatus.FORBIDDEN, "Email has not been verified by OTP");
+    EMAIL_NOT_VERIFIED("EMAIL_NOT_VERIFIED", HttpStatus.FORBIDDEN, "Email has not been verified by OTP"),
+
+    RATE_LIMITED("RATE_LIMITED", HttpStatus.TOO_MANY_REQUESTS, "Too many requests, please try again later"),
+    ACCOUNT_TEMPORARILY_LOCKED("ACCOUNT_TEMPORARILY_LOCKED", HttpStatus.TOO_MANY_REQUESTS, "Too many failed login attempts, please try again later"),
+    COMMENT_TOO_MANY_LINKS("COMMENT_TOO_MANY_LINKS", HttpStatus.BAD_REQUEST, "A comment can have at most 2 links"),
+    COMMENT_DUPLICATE("COMMENT_DUPLICATE", HttpStatus.CONFLICT, "You already posted this comment"),
+    ACCOUNT_TOO_NEW("ACCOUNT_TOO_NEW", HttpStatus.FORBIDDEN, "Your account is too new to comment, please try again in a few minutes"),
+    COMMENT_AWAITING_REVIEW("COMMENT_AWAITING_REVIEW", HttpStatus.ACCEPTED, "Your comment is waiting for review.");
 
     private final String code;
     private final HttpStatus status;

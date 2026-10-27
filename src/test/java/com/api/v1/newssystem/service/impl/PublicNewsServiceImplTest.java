@@ -78,13 +78,15 @@ class PublicNewsServiceImplTest {
 
     @Mock
     private SystemSettingService systemSettingService;
+    @Mock
+    private com.api.v1.newssystem.service.RateLimitService rateLimitService;
 
     private PublicNewsServiceImpl service;
 
     @BeforeEach
     void setUp() {
         service = new PublicNewsServiceImpl(newsRepository, newsTagRepository, newsImageRepository, newsViewRepository,
-                commentRepository, bookmarkRepository, categoryRepository, appUserRepository, currentUserService, systemSettingService);
+                commentRepository, bookmarkRepository, categoryRepository, appUserRepository, currentUserService, systemSettingService, rateLimitService);
         lenient().when(currentUserService.findCurrentUser()).thenReturn(Optional.empty()); // a visitor
     }
 
@@ -491,5 +493,31 @@ class PublicNewsServiceImplTest {
         ArgumentCaptor<NewsView> saved = ArgumentCaptor.forClass(NewsView.class);
         verify(newsViewRepository).save(saved.capture());
         assertThat(saved.getValue().getIp()).hasSize(45);
+    }
+
+    // ---------------- rate limit of the search ----------------
+
+    @Test
+    void list_withAKeyword_countsOneSearchForTheIp_butAPlainListDoesNot() {
+        when(newsRepository.searchPublished(any(), any(), any(), any(), any(), any(Pageable.class))).thenReturn(Page.empty());
+
+        service.list(null, null, null, null, null, 1, 10);
+        service.list("   ", null, null, null, null, 1, 10);
+        org.mockito.Mockito.verify(rateLimitService, org.mockito.Mockito.never()).checkIp(any());
+
+        service.list("ព័ត៌មាន", null, null, null, null, 1, 10);
+        org.mockito.Mockito.verify(rateLimitService).checkIp(com.api.v1.newssystem.model.enumerate.RateLimitAction.SEARCH);
+    }
+
+    @Test
+    void list_whenTheSearchIsRateLimited_noQueryIsRun() {
+        org.mockito.Mockito.doThrow(new com.api.v1.newssystem.common.exception.CustomException(
+                        com.api.v1.newssystem.common.constant.MessageConstant.RATE_LIMITED, 30))
+                .when(rateLimitService).checkIp(com.api.v1.newssystem.model.enumerate.RateLimitAction.SEARCH);
+
+        org.assertj.core.api.Assertions.assertThatThrownBy(() -> service.list("news", null, null, null, null, 1, 10))
+                .isInstanceOf(com.api.v1.newssystem.common.exception.CustomException.class);
+
+        org.mockito.Mockito.verify(newsRepository, org.mockito.Mockito.never()).searchPublished(any(), any(), any(), any(), any(), any());
     }
 }

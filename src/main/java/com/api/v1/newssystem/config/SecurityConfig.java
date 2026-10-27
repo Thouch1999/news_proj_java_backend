@@ -77,6 +77,13 @@ public class SecurityConfig {
                                 // system settings: everybody reads the public ones, only the admin reads all and changes them
                                 .requestMatchers(HttpMethod.GET, "/api/v1/settings/public").permitAll()
                                 .requestMatchers("/api/v1/settings/**").hasRole("ADMIN")
+                                // promos (sponsors): the page reads one, counts its view and click without a login; the
+                                // management (/api/v1/admin/promos) is for the admin. "promos" is a neutral word: ad
+                                // blockers block paths named ads or sponsors
+                                .requestMatchers(HttpMethod.GET, "/api/v1/promos", "/api/v1/promos/*/click").permitAll()
+                                .requestMatchers(HttpMethod.POST, "/api/v1/promos/*/impression", "/api/v1/promos/*/video-play",
+                                        "/api/v1/promos/*/video-complete").permitAll()
+                                .requestMatchers("/api/v1/admin/**").hasRole("ADMIN")
                                 // notifications: any logged-in user, only their own (scoped in NotificationService)
                                 .requestMatchers("/api/v1/notifications/**").authenticated()
                                 // activity log: the editors read only the content feed, everything else is for the admin (read only)
@@ -117,6 +124,11 @@ public class SecurityConfig {
                                 .requestMatchers(HttpMethod.POST, "/api/v1/news/*/publish", "/api/v1/news/*/reject",
                                         "/api/v1/news/*/archive").hasAnyRole("EDITOR", "ADMIN")
                                 .requestMatchers(HttpMethod.POST, "/api/v1/news/*/restore").hasRole("ADMIN")
+                                // scheduled publishing: an editor or an admin (NewsService: only an admin schedules a DRAFT)
+                                .requestMatchers(HttpMethod.POST, "/api/v1/news/*/schedule").hasAnyRole("EDITOR", "ADMIN")
+                                .requestMatchers(HttpMethod.PATCH, "/api/v1/news/*/schedule").hasAnyRole("EDITOR", "ADMIN")
+                                .requestMatchers(HttpMethod.DELETE, "/api/v1/news/*/schedule").hasAnyRole("EDITOR", "ADMIN")
+                                .requestMatchers(HttpMethod.GET, "/api/v1/news/scheduled/upcoming").hasAnyRole("EDITOR", "ADMIN")
                                 .requestMatchers(HttpMethod.GET, "/api/v1/news/review").hasAnyRole("EDITOR", "ADMIN")
                                 // an editor also reads and edits articles (NewsService limits what each role may do)
                                 .requestMatchers("/api/v1/news/**").hasAnyRole("AUTHOR", "EDITOR", "ADMIN")

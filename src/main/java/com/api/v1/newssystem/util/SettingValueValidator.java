@@ -1,12 +1,17 @@
 package com.api.v1.newssystem.util;
 
+import com.api.v1.newssystem.model.enumerate.PopupFrequency;
+import com.api.v1.newssystem.model.enumerate.PopupTrigger;
 import com.api.v1.newssystem.model.enumerate.SettingKey;
+import com.api.v1.newssystem.model.enumerate.SidebarLayout;
 import com.api.v1.newssystem.model.enumerate.SettingType;
 
 import java.net.URI;
 import java.net.URISyntaxException;
+import java.util.Arrays;
 import java.util.Locale;
 import java.util.regex.Pattern;
+import java.util.stream.Collectors;
 
 /**
  * Checks and cleans the text value of one system setting. Every setting is plain text: the characters &lt; and &gt;
@@ -63,7 +68,26 @@ public final class SettingValueValidator {
                         ? null
                         : "must be between " + SettingKey.NEWS_PER_PAGE_MIN + " and " + SettingKey.NEWS_PER_PAGE_MAX;
             }
+            case POPUP_DELAY -> inRange(value, SettingKey.POPUP_DELAY_MIN, SettingKey.POPUP_DELAY_MAX);
+            case SCROLL_PERCENT -> inRange(value, SettingKey.SCROLL_PERCENT_MIN, SettingKey.SCROLL_PERCENT_MAX);
+            case FREQUENCY_DAYS -> inRange(value, SettingKey.FREQUENCY_DAYS_MIN, SettingKey.FREQUENCY_DAYS_MAX);
+            case SIDEBAR_COUNT -> inRange(value, SettingKey.SIDEBAR_COUNT_MIN, SettingKey.SIDEBAR_COUNT_MAX);
+            case SIDEBAR_INTERVAL -> inRange(value, SettingKey.SIDEBAR_INTERVAL_MIN, SettingKey.SIDEBAR_INTERVAL_MAX);
+            case SIDEBAR_LAYOUT -> oneOf(value, SidebarLayout.values());
+            case POPUP_TRIGGER -> oneOf(value, PopupTrigger.values());
+            case POPUP_FREQUENCY -> oneOf(value, PopupFrequency.values());
         };
+    }
+
+    // `value` is a whole number here (the NUMBER type was checked first)
+    private static String inRange(String value, int min, int max) {
+        int number = Integer.parseInt(value);
+        return number >= min && number <= max ? null : "must be between " + min + " and " + max;
+    }
+
+    private static String oneOf(String value, Enum<?>[] allowed) {
+        return Arrays.stream(allowed).anyMatch(option -> option.name().equals(value))
+                ? null : "must be one of: " + Arrays.stream(allowed).map(Enum::name).collect(Collectors.joining(", "));
     }
 
     /** The value in its saved form: a colour in capitals, a boolean in lower case, a number without leading zeros. */
@@ -83,7 +107,8 @@ public final class SettingValueValidator {
         return value.equalsIgnoreCase("true") || value.equalsIgnoreCase("false");
     }
 
-    private static boolean isHttpsUrl(String value) {
+    /** An https address with a host, no user info, no spaces and no control characters (also used for sponsor links). */
+    public static boolean isHttpsUrl(String value) {
         for (int i = 0; i < value.length(); i++) {
             if (Character.isWhitespace(value.charAt(i)) || Character.isISOControl(value.charAt(i))) {
                 return false;

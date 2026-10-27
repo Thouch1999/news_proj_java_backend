@@ -10,6 +10,7 @@ import com.api.v1.newssystem.model.response.NewsStatusHistoryDto;
 import org.springframework.data.domain.Page;
 import org.springframework.web.multipart.MultipartFile;
 
+import java.time.Instant;
 import java.util.List;
 
 /**
@@ -39,8 +40,9 @@ public interface NewsService {
     /**
      * Management list. An admin gets every article and may filter by status, author and category;
      * an author always gets only their own (authorId is ignored) and may filter by status and category.
+     * sort: empty (newest change first) or "scheduledAt" (nearest scheduled time first); anything else is 400.
      */
-    Page<NewsSummaryDto> listManaged(NewsStatus status, Long authorId, Long categoryId, int page, int size);
+    Page<NewsSummaryDto> listManaged(NewsStatus status, Long authorId, Long categoryId, String sort, int page, int size);
 
     /**
      * Hard-deletes an article with everything attached to it: tags, images (and their files), status history,
@@ -63,7 +65,7 @@ public interface NewsService {
     /** Own article, DRAFT or REJECTED → PENDING; clears the rejection reason. */
     NewsDto submit(Long id);
 
-    /** EDITOR/ADMIN: PENDING → PUBLISHED. ADMIN only: DRAFT → PUBLISHED (without review). */
+    /** EDITOR/ADMIN: PENDING or SCHEDULED ("publish now") → PUBLISHED. ADMIN only: DRAFT → PUBLISHED (without review). */
     NewsDto publish(Long id);
 
     /** EDITOR/ADMIN: PENDING → REJECTED; the reason is required and saved on the article. */
@@ -74,6 +76,28 @@ public interface NewsService {
 
     /** ADMIN only: ARCHIVED → PUBLISHED. */
     NewsDto restore(Long id);
+
+    /** EDITOR/ADMIN: PENDING → SCHEDULED; ADMIN only: DRAFT → SCHEDULED. scheduledAt (UTC) is 5 minutes to 1 year from now. */
+    NewsDto schedule(Long id, Instant scheduledAt);
+
+    /** EDITOR/ADMIN: changes the time of a SCHEDULED article (same window). */
+    NewsDto reschedule(Long id, Instant scheduledAt);
+
+    /** EDITOR/ADMIN: SCHEDULED → PENDING; the schedule is cleared. */
+    NewsDto cancelSchedule(Long id);
+
+    /** EDITOR/ADMIN: the next 10 SCHEDULED articles, nearest first. */
+    List<NewsSummaryDto> listUpcoming();
+
+    /** The ids of the SCHEDULED articles that are due now (used by ScheduledPublishJob). */
+    List<Long> findDueScheduledIds();
+
+    /**
+     * Publishes one due SCHEDULED article in a transaction of its own (called by ScheduledPublishJob): the conditional update, the
+     * status history, the activity log entry (the system is the actor), the notification and the preview cache. Returns false
+     * when it was not published (not due, not SCHEDULED any more, or published by someone else first).
+     */
+    boolean publishScheduled(Long id);
 
     /** EDITOR/ADMIN: allow or stop new comments on an article, in any status. Existing comments stay. */
     NewsDto setCommentsEnabled(Long id, boolean enabled);

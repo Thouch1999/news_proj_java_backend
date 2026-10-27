@@ -14,7 +14,7 @@ class NewsDtoJsonTest {
     @Test
     void dates_areWrittenAsReadableIsoText_andTheRejectionReasonIsIncluded() {
         NewsDto dto = new NewsDto(1L, "Title", "title", null, "Body", null, NewsStatus.REJECTED, 7L, "Author Name", null, List.of(), List.of(),
-                true, "Please add sources", true, 0, null, LocalDateTime.of(2026, 10, 17, 12, 30), LocalDateTime.of(2026, 10, 18, 8, 5, 9));
+                true, "Please add sources", true, 0, null, null, null, LocalDateTime.of(2026, 10, 17, 12, 30), LocalDateTime.of(2026, 10, 18, 8, 5, 9));
 
         String json = JsonMapper.builder().build().writeValueAsString(dto);
 

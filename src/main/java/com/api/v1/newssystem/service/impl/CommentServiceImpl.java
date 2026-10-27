@@ -18,9 +18,15 @@ import com.api.v1.newssystem.repository.AppUserRepository;
 import com.api.v1.newssystem.repository.CommentRepository;
 import com.api.v1.newssystem.repository.NewsRepository;
 import com.api.v1.newssystem.security.CurrentUserService;
+import com.api.v1.newssystem.config.AppProperty;
+import com.api.v1.newssystem.model.enumerate.RateLimitAction;
 import com.api.v1.newssystem.service.CommentService;
+import com.api.v1.newssystem.service.RateLimitService;
+import com.api.v1.newssystem.service.SystemSettingService;
+import com.api.v1.newssystem.util.CommentRules;
 import jakarta.transaction.Transactional;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import com.api.v1.newssystem.service.NotificationEvent;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.data.domain.Page;
@@ -30,6 +36,12 @@ import org.springframework.data.domain.Sort;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 
+import java.time.Clock;
+import java.time.Duration;
+import java.time.LocalDateTime;
+import java.util.concurrent.ThreadLocalRandom;
+
+@Slf4j
 @Service
 @RequiredArgsConstructor
 public class CommentServiceImpl implements CommentService {
@@ -43,6 +55,10 @@ public class CommentServiceImpl implements CommentService {
     private final CurrentUserService currentUserService;
     private final ApplicationEventPublisher eventPublisher;
     private final ActivityLogService activityLogService;
+    private final RateLimitService rateLimitService;
+    private final SystemSettingService systemSettingService;
+    private final AppProperty appProperty;
+    private final Clock clock;
 
     @Override
     @Transactional
@@ -56,6 +72,13 @@ public class CommentServiceImpl implements CommentService {
     public CommentDto create(Long newsId, CommentRequest request) {
         AppUser user = currentUserService.getCurrentUser();
         String content = request.getContent() == null ? "" : request.getContent().trim();
+        if (request.getWebsite() != null && !request.getWebsite().isBlank()) {
+            // honeypot: a bot filled the hidden field. It is told that it worked, and nothing is saved.
+            log.debug("Honeypot: comment of user {} ignored", user.getId());
+            return fakeComment(content, user);
+        }
+        rateLimitService.checkUser(RateLimitAction.COMMENT_PER_MINUTE, user.getId());
+        rateLimitService.checkUser(RateLimitAction.COMMENT_PER_DAY, user.getId());
         if (content.isEmpty() || content.length() > MAX_LENGTH) {
             throw new CustomException(HttpStatus.BAD_REQUEST, MessageConstant.INVALID_PARAMETER.getDefaultMessage());
         }
@@ -63,15 +86,33 @@ public class CommentServiceImpl implements CommentService {
         if (!news.isCommentsEnabled()) {
             throw new CustomException(HttpStatus.CONFLICT, MessageConstant.COMMENTS_DISABLED.getDefaultMessage());
         }
+        requireOldEnoughAccount(user);
+        if (CommentRules.countLinks(content) > appProperty.getProtection().getComment().getMaxLinks()) {
+            throw new CustomException(MessageConstant.COMMENT_TOO_MANY_LINKS);
+        }
+        boolean duplicate = commentRepository.findFirstByUserIdOrderByCreatedAtDescIdDesc(user.getId())
+                .filter(previous -> CommentRules.isSameText(previous.getContent(), content))
+                .isPresent();
+        if (duplicate) {
+            throw new CustomException(MessageConstant.COMMENT_DUPLICATE);
+        }
+
+        // a blocked word does not refuse the comment: it is saved HIDDEN for a moderator, who sees the reason
+        String blockedWord = CommentRules.findBlockedWord(content, systemSettingService.getCommentBlockedWords());
 
         Comment comment = new Comment();
         comment.setNews(news);
         comment.setUser(appUserRepository.getReferenceById(user.getId()));
         comment.setContent(content);
-        comment.setStatus(CommentStatus.VISIBLE);
+        comment.setStatus(blockedWord == null ? CommentStatus.VISIBLE : CommentStatus.HIDDEN);
+        comment.setModerationNote(blockedWord == null ? null : "Contains a blocked word: " + blockedWord);
         Comment saved = commentRepository.save(comment);
+        if (blockedWord != null) {
+            // the commenter is told it waits; the word is not revealed to them, and nobody is notified of a hidden comment
+            return toDto(saved, user, false, MessageConstant.COMMENT_AWAITING_REVIEW.getDefaultMessage());
+        }
         eventPublisher.publishEvent(NotificationEvent.newComment(user, news, saved)); // to the article's author, not to themselves
-        return toDto(saved, user);
+        return toDto(saved, user, false, null);
     }
 
     @Override
@@ -92,7 +133,8 @@ public class CommentServiceImpl implements CommentService {
     @Transactional
     public Page<CommentDto> listAll(CommentStatus status, Long newsId, Long userId, int page, int size) {
         requireStaff();
-        return commentRepository.search(status, newsId, userId, pageable(page, size)).map(this::toDto);
+        return commentRepository.search(status, newsId, userId, pageable(page, size))
+                .map(comment -> toDto(comment, comment.getUser(), true, null)); // moderators see the moderation note
     }
 
     @Override
@@ -152,6 +194,25 @@ public class CommentServiceImpl implements CommentService {
         return user;
     }
 
+    // an account must be a few minutes old before it can comment (a script that signs up and posts at once is stopped)
+    private void requireOldEnoughAccount(AppUser user) {
+        if (user.getCreatedAt() == null) {
+            return;
+        }
+        LocalDateTime opensAt = user.getCreatedAt().plusMinutes(appProperty.getProtection().getComment().getMinAccountAgeMinutes());
+        LocalDateTime now = LocalDateTime.now(clock);
+        if (opensAt.isAfter(now)) {
+            throw new CustomException(MessageConstant.ACCOUNT_TOO_NEW, (int) Math.max(1, (Duration.between(now, opensAt).toMillis() + 999) / 1000));
+        }
+    }
+
+    // what a bot gets back: the shape of a real answer, an id that does not exist, nothing saved
+    private CommentDto fakeComment(String content, AppUser user) {
+        LocalDateTime now = LocalDateTime.now(clock);
+        return new CommentDto(ThreadLocalRandom.current().nextLong(1_000_000_000L, Long.MAX_VALUE), null, null, null, user.getId(),
+                displayName(user), content, CommentStatus.VISIBLE, now, now, null, null);
+    }
+
     private Pageable pageable(int page, int size) {
         return PageRequest.of(Math.max(page, 1) - 1, Math.min(Math.max(size, 1), MAX_PAGE_SIZE), NEWEST);
     }
@@ -159,10 +220,14 @@ public class CommentServiceImpl implements CommentService {
     // ---- mapping ----
 
     private CommentDto toDto(Comment comment) {
-        return toDto(comment, comment.getUser());
+        return toDto(comment, comment.getUser(), false, null);
     }
 
-    private CommentDto toDto(Comment comment, AppUser user) {
+    private static String displayName(AppUser user) {
+        return user.getFullName() != null && !user.getFullName().isBlank() ? user.getFullName() : user.getName();
+    }
+
+    private CommentDto toDto(Comment comment, AppUser user, boolean withModerationNote, String message) {
         News news = comment.getNews();
         return new CommentDto(
                 comment.getId(),
@@ -170,10 +235,12 @@ public class CommentServiceImpl implements CommentService {
                 news.getTitle(),
                 news.getSlug(),
                 user.getId(),
-                user.getFullName() != null && !user.getFullName().isBlank() ? user.getFullName() : user.getName(),
+                displayName(user),
                 comment.getContent(),
                 comment.getStatus(),
                 comment.getCreatedAt(),
-                comment.getUpdatedAt());
+                comment.getUpdatedAt(),
+                withModerationNote ? comment.getModerationNote() : null,
+                message);
     }
 }

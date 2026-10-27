@@ -20,4 +20,6 @@ public class ErrorResponse {
     private Map<String, String> details;
     private Date localDateTime;
     private String path;
+    // seconds until the caller may try again (rate limit, lockout); also sent as the Retry-After header
+    private Integer retryAfterSeconds;
 }

@@ -65,10 +65,16 @@ class CommentServiceImplTest {
 
     @Mock
     private com.api.v1.newssystem.service.ActivityLogService activityLogService;
+    @Mock
+    private com.api.v1.newssystem.service.RateLimitService rateLimitService;
+    @Mock
+    private com.api.v1.newssystem.service.SystemSettingService systemSettingService;
+    private final com.api.v1.newssystem.util.MutableClock clock = new com.api.v1.newssystem.util.MutableClock();
 
     @BeforeEach
     void setUp() {
-        service = new CommentServiceImpl(commentRepository, newsRepository, appUserRepository, currentUserService, eventPublisher, activityLogService);
+        service = new CommentServiceImpl(commentRepository, newsRepository, appUserRepository, currentUserService, eventPublisher, activityLogService,
+                rateLimitService, systemSettingService, new com.api.v1.newssystem.config.AppProperty(), clock);
         loginAs(Roles.READER);
         lenient().when(commentRepository.save(any(Comment.class))).thenAnswer(call -> {
             Comment comment = call.getArgument(0);

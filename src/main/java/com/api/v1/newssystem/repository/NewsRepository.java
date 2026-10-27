@@ -11,6 +11,7 @@ import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 
+import java.time.Instant;
 import java.time.LocalDateTime;
 import java.util.Collection;
 import java.util.List;
@@ -39,6 +40,32 @@ public interface NewsRepository extends JpaRepository<News, Long> {
 
     // the editors' review queue: every article in this status
     Page<News> findAllByStatus(NewsStatus status, Pageable pageable);
+
+    // ---- scheduled publishing ----
+
+    // the next scheduled articles, nearest first
+    @EntityGraph(attributePaths = {"author", "category", "scheduledBy"})
+    List<News> findTop10ByStatusOrderByScheduledAtAscIdAsc(NewsStatus status);
+
+    // the SCHEDULED articles that are due, oldest first (ids only: each one is published in its own transaction)
+    @Query("""
+            select n.id from News n
+            where n.status = com.api.v1.newssystem.model.enumerate.NewsStatus.SCHEDULED and n.scheduledAt <= :now
+            order by n.scheduledAt asc, n.id asc
+            """)
+    List<Long> findDueScheduledIds(@Param("now") Instant now);
+
+    // the conditional update: only the caller that finds the article still SCHEDULED and due publishes it (1 row), so it is
+    // never published twice, even when two application instances run the job. Returns the rows changed (0 or 1).
+    @Modifying(flushAutomatically = true, clearAutomatically = true)
+    @Query("""
+            update News n set n.status = com.api.v1.newssystem.model.enumerate.NewsStatus.PUBLISHED,
+                              n.publishedAt = :publishedAt, n.updatedAt = :publishedAt
+            where n.id = :id
+              and n.status = com.api.v1.newssystem.model.enumerate.NewsStatus.SCHEDULED
+              and n.scheduledAt <= :now
+            """)
+    int publishIfDue(@Param("id") Long id, @Param("publishedAt") LocalDateTime publishedAt, @Param("now") Instant now);
 
     // ---- public reading: only PUBLISHED articles of an active category; author and category come in the same query ----
 

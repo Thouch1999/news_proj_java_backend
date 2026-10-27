@@ -10,7 +10,7 @@ import java.util.concurrent.Executor;
 
 @Configuration
 @EnableAsync
-@EnableScheduling // the notification cleanup job (NotificationCleanupJob)
+@EnableScheduling // the cleanup jobs (NotificationCleanupJob, ActivityLogCleanupJob) and ScheduledPublishJob
 public class AsyncConfig {
 
     public static final String MAIL_EXECUTOR = "mailTaskExecutor";

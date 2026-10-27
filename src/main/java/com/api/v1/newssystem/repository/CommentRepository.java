@@ -17,6 +17,9 @@ import java.util.Optional;
 
 @Repository
 public interface CommentRepository extends JpaRepository<Comment, Long> {
+    // the latest comment of a user, in any status (the duplicate check)
+    Optional<Comment> findFirstByUserIdOrderByCreatedAtDescIdDesc(Long userId);
+
     long countByNewsIdAndStatus(Long newsId, CommentStatus status);
 
     // the comments of an article in one status, page by page; the author comes in the same query (no query per comment)

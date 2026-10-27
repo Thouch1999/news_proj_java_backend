@@ -1,5 +1,6 @@
 package com.api.v1.newssystem.common.exception;
 
+import com.api.v1.newssystem.common.constant.MessageConstant;
 import com.api.v1.newssystem.common.response.ErrorResponse;
 import com.api.v1.newssystem.util.ApiResponseUtil;
 import lombok.Getter;
@@ -45,6 +46,18 @@ public class CustomException extends RuntimeException {
                 message
         );
         this.httpStatus = httpStatus;
+    }
+
+    // Constructor with a MessageConstant: its status, its code (in `error`) and its text
+    public CustomException(MessageConstant message) {
+        this(message, null);
+    }
+
+    // Same, with the seconds until the caller may try again (RATE_LIMITED, ACCOUNT_TEMPORARILY_LOCKED ...)
+    public CustomException(MessageConstant message, Integer retryAfterSeconds) {
+        super(message.getDefaultMessage());
+        this.errorResponse = ApiResponseUtil.error(message, retryAfterSeconds);
+        this.httpStatus = message.getStatus();
     }
 
     // Constructor with message, details, HTTP status, and path

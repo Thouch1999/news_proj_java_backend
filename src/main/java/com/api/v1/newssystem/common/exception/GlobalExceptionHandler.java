@@ -6,6 +6,7 @@ import com.api.v1.newssystem.util.ApiResponseUtil;
 import io.jsonwebtoken.JwtException;
 import jakarta.servlet.http.HttpServletRequest;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.converter.HttpMessageNotReadableException;
@@ -29,7 +30,11 @@ public class GlobalExceptionHandler {
     public ResponseEntity<ErrorResponse> handleCustom(CustomException ex, HttpServletRequest request) {
         ErrorResponse error = ex.getErrorResponse();
         error.setPath(request.getRequestURI());
-        return ResponseEntity.status(ex.getHttpStatus()).body(error);
+        ResponseEntity.BodyBuilder response = ResponseEntity.status(ex.getHttpStatus());
+        if (error.getRetryAfterSeconds() != null) {
+            response.header(HttpHeaders.RETRY_AFTER, String.valueOf(error.getRetryAfterSeconds()));
+        }
+        return response.body(error);
     }
 
     @ExceptionHandler(Exception.class)

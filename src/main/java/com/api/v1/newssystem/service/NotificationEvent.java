@@ -5,6 +5,7 @@ import com.api.v1.newssystem.model.entity.Comment;
 import com.api.v1.newssystem.model.entity.News;
 import com.api.v1.newssystem.model.enumerate.NotificationType;
 
+import java.time.Instant;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -33,6 +34,25 @@ public record NotificationEvent(NotificationType type, Long actorId, Long recipi
             data.put("reason", reason);
         }
         return new NotificationEvent(type, actor.getId(), news.getAuthor().getId(), news.getId(), null, data);
+    }
+
+    // the article was scheduled (or its time changed): to the author, with the UTC time
+    public static NotificationEvent articleScheduled(AppUser actor, News news, Instant scheduledAt) {
+        Map<String, Object> data = articleData(news, actor);
+        data.put("scheduledAt", scheduledAt.toString());
+        return new NotificationEvent(NotificationType.ARTICLE_SCHEDULED, actor.getId(), news.getAuthor().getId(), news.getId(), null, data);
+    }
+
+    // the job published a scheduled article: the system is the actor (no actor id), so the author is always told, even when they
+    // scheduled it themselves; actorName is the person who scheduled it
+    public static NotificationEvent articlePublishedAutomatically(News news, AppUser scheduledBy) {
+        Map<String, Object> data = new LinkedHashMap<>();
+        data.put("newsTitle", news.getTitle());
+        data.put("newsSlug", news.getSlug());
+        if (scheduledBy != null) {
+            data.put("actorName", nameOf(scheduledBy));
+        }
+        return new NotificationEvent(NotificationType.ARTICLE_PUBLISHED, null, news.getAuthor().getId(), news.getId(), null, data);
     }
 
     public static NotificationEvent newComment(AppUser actor, News news, Comment comment) {

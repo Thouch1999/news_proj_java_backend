@@ -6,6 +6,7 @@ import com.api.v1.newssystem.model.enumerate.NewsStatus;
 import com.api.v1.newssystem.model.request.NewsImageRequest;
 import com.api.v1.newssystem.model.request.NewsRejectRequest;
 import com.api.v1.newssystem.model.request.NewsRequest;
+import com.api.v1.newssystem.model.request.NewsScheduleRequest;
 import com.api.v1.newssystem.model.response.NewsDto;
 import com.api.v1.newssystem.model.response.NewsImageDto;
 import com.api.v1.newssystem.model.response.NewsStatusHistoryDto;
@@ -54,9 +55,10 @@ public class NewsController {
             @RequestParam(defaultValue = "10") int size,
             @RequestParam(required = false) NewsStatus status,
             @RequestParam(required = false) Long authorId,
-            @RequestParam(required = false) Long categoryId) {
+            @RequestParam(required = false) Long categoryId,
+            @RequestParam(required = false) String sort) {
         return ResponseEntity.ok(
-                ApiResponseUtil.pagination(HttpStatus.OK, newsService.listManaged(status, authorId, categoryId, page, size))
+                ApiResponseUtil.pagination(HttpStatus.OK, newsService.listManaged(status, authorId, categoryId, sort, page, size))
         );
     }
 
@@ -104,6 +106,30 @@ public class NewsController {
         );
     }
 
+    // EDITOR/ADMIN: schedule a PENDING article (an admin also a DRAFT), change the time, or cancel (back to PENDING). scheduledAt is UTC.
+    @PostMapping("/{id}/schedule")
+    public ResponseEntity<SuccessResponse<NewsDto>> schedule(@PathVariable Long id,
+                                                             @Valid @RequestBody NewsScheduleRequest request) {
+        return ResponseEntity.ok(
+                ApiResponseUtil.success(HttpStatus.OK, newsService.schedule(id, request.getScheduledAt()))
+        );
+    }
+
+    @PatchMapping("/{id}/schedule")
+    public ResponseEntity<SuccessResponse<NewsDto>> reschedule(@PathVariable Long id,
+                                                               @Valid @RequestBody NewsScheduleRequest request) {
+        return ResponseEntity.ok(
+                ApiResponseUtil.success(HttpStatus.OK, newsService.reschedule(id, request.getScheduledAt()))
+        );
+    }
+
+    @DeleteMapping("/{id}/schedule")
+    public ResponseEntity<SuccessResponse<NewsDto>> cancelSchedule(@PathVariable Long id) {
+        return ResponseEntity.ok(
+                ApiResponseUtil.success(HttpStatus.OK, newsService.cancelSchedule(id))
+        );
+    }
+
     @PostMapping("/{id}/reject")
     public ResponseEntity<SuccessResponse<NewsDto>> reject(@PathVariable Long id,
                                                            @Valid @RequestBody NewsRejectRequest request) {
@@ -148,6 +174,14 @@ public class NewsController {
             @RequestParam(defaultValue = "10") int size) {
         return ResponseEntity.ok(
                 ApiResponseUtil.pagination(HttpStatus.OK, newsService.listReviewQueue(page, size))
+        );
+    }
+
+    // The next 10 scheduled articles, nearest first (EDITOR, ADMIN).
+    @GetMapping("/scheduled/upcoming")
+    public ResponseEntity<SuccessResponse<List<NewsSummaryDto>>> upcoming() {
+        return ResponseEntity.ok(
+                ApiResponseUtil.success(HttpStatus.OK, newsService.listUpcoming())
         );
     }
 

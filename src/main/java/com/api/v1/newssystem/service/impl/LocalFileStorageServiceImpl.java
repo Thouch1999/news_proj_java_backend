@@ -4,12 +4,17 @@ import com.api.v1.newssystem.common.constant.MessageConstant;
 import com.api.v1.newssystem.common.exception.CustomException;
 import com.api.v1.newssystem.config.AppProperty;
 import com.api.v1.newssystem.service.FileStorageService;
+import com.api.v1.newssystem.util.VideoInspector;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.web.multipart.MultipartFile;
 
+import javax.imageio.ImageIO;
+import java.awt.Graphics2D;
+import java.awt.RenderingHints;
+import java.awt.image.BufferedImage;
 import java.io.IOException;
 import java.io.InputStream;
 import java.nio.file.Files;
@@ -26,7 +31,7 @@ import java.util.regex.Pattern;
 public class LocalFileStorageServiceImpl implements FileStorageService {
     private static final String URL_PREFIX = "/uploads/";
     private static final Pattern STORED_NAME =
-            Pattern.compile("^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\\.(jpg|png|gif|webp|ico)$");
+            Pattern.compile("^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\\.(jpg|png|gif|webp|ico|mp4|webm)$");
 
     private static final Set<String> DEFAULT_TYPES = Set.of("jpg", "png", "gif", "webp");
 
@@ -71,6 +76,52 @@ public class LocalFileStorageServiceImpl implements FileStorageService {
     }
 
     @Override
+    public String storeSquareCrop(String sourceUrl, int size) {
+        Path source = pathOf(sourceUrl);
+        if (source == null || size <= 0) {
+            return null;
+        }
+        try {
+            BufferedImage image = ImageIO.read(source.toFile()); // null for a type the JDK cannot read (WebP)
+            if (image == null) {
+                return null;
+            }
+            int side = Math.min(image.getWidth(), image.getHeight());
+            BufferedImage square = image.getSubimage((image.getWidth() - side) / 2, (image.getHeight() - side) / 2, side, side);
+            BufferedImage out = new BufferedImage(size, size, BufferedImage.TYPE_INT_ARGB);
+            Graphics2D graphics = out.createGraphics();
+            try {
+                graphics.setRenderingHint(RenderingHints.KEY_INTERPOLATION, RenderingHints.VALUE_INTERPOLATION_BICUBIC);
+                graphics.setRenderingHint(RenderingHints.KEY_RENDERING, RenderingHints.VALUE_RENDER_QUALITY);
+                graphics.drawImage(square, 0, 0, size, size, null);
+            } finally {
+                graphics.dispose();
+            }
+            Path root = root();
+            Files.createDirectories(root);
+            String name = UUID.randomUUID() + ".png";
+            ImageIO.write(out, "png", root.resolve(name).toFile());
+            return URL_PREFIX + name;
+        } catch (IOException | RuntimeException e) {
+            log.warn("Could not cut a square out of {}", sourceUrl, e);
+            return null;
+        }
+    }
+
+    // the file of a path returned by store(), or null for anything else
+    private Path pathOf(String url) {
+        if (url == null || !url.startsWith(URL_PREFIX)) {
+            return null;
+        }
+        String name = url.substring(URL_PREFIX.length());
+        if (!STORED_NAME.matcher(name).matches()) {
+            return null;
+        }
+        Path file = root().resolve(name);
+        return Files.isRegularFile(file) ? file : null;
+    }
+
+    @Override
     public void delete(String url) {
         if (url == null || !url.startsWith(URL_PREFIX)) {
             return;
@@ -90,7 +141,7 @@ public class LocalFileStorageServiceImpl implements FileStorageService {
         return Paths.get(appProperty.getUpload().getDir()).toAbsolutePath().normalize();
     }
 
-    // magic numbers of the allowed image types
+    // magic numbers of the allowed image and video types
     static String detectExtension(byte[] h) {
         if (h.length >= 3 && (h[0] & 0xFF) == 0xFF && (h[1] & 0xFF) == 0xD8 && (h[2] & 0xFF) == 0xFF) {
             return "jpg";
@@ -109,6 +160,7 @@ public class LocalFileStorageServiceImpl implements FileStorageService {
         if (h.length >= 4 && h[0] == 0 && h[1] == 0 && h[2] == 1 && h[3] == 0) {
             return "ico";
         }
-        return null;
+        // the sponsor videos: the container only, the codec and the duration are checked by the caller (VideoInspector)
+        return VideoInspector.containerOf(h);
     }
 }

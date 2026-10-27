@@ -73,8 +73,14 @@ class AuthServiceImplTest {
 
     @BeforeEach
     void setUp() {
+        com.api.v1.newssystem.config.AppProperty properties = new com.api.v1.newssystem.config.AppProperty();
+        org.springframework.cache.CacheManager cacheManager = new com.api.v1.newssystem.config.CacheConfig().cacheManager();
+        com.api.v1.newssystem.security.ClientIpResolver ipResolver = new com.api.v1.newssystem.security.ClientIpResolver(properties);
+        java.time.Clock clock = java.time.Clock.systemDefaultZone();
         authService = new AuthServiceImpl(appUserService, tokenService, jwtService, appUserRepository, otpService,
-                currentUserService, passwordEncoder, new MapperConfig().modelMapper(), eventPublisher, activityLogService, transactionManager);
+                currentUserService, passwordEncoder, new MapperConfig().modelMapper(), eventPublisher, activityLogService, transactionManager,
+                new RateLimitServiceImpl(cacheManager, properties, ipResolver, clock),
+                new LoginLockoutServiceImpl(cacheManager, properties, ipResolver, clock), ipResolver);
     }
 
     private AppUser user(Roles role) {

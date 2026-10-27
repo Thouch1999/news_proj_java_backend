@@ -188,6 +188,7 @@ public class NotificationServiceImpl implements NotificationService {
     private static String title(NotificationType type) {
         return switch (type) {
             case ARTICLE_SUBMITTED -> "Article submitted for review";
+            case ARTICLE_SCHEDULED -> "Article scheduled";
             case ARTICLE_PUBLISHED -> "Article published";
             case ARTICLE_REJECTED -> "Article rejected";
             case ARTICLE_ARCHIVED -> "Article archived";
@@ -203,6 +204,7 @@ public class NotificationServiceImpl implements NotificationService {
         String news = "\"" + data.getOrDefault("newsTitle", "") + "\"";
         return switch (type) {
             case ARTICLE_SUBMITTED -> actor + " submitted " + news + " for review";
+            case ARTICLE_SCHEDULED -> news + " is scheduled for " + data.getOrDefault("scheduledAt", "");
             case ARTICLE_PUBLISHED -> news + " was published";
             case ARTICLE_REJECTED -> news + " was rejected" + (data.get("reason") == null ? "" : ": " + data.get("reason"));
             case ARTICLE_ARCHIVED -> news + " was archived";

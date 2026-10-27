@@ -73,6 +73,7 @@ class AdminAccessControlTest {
                 put("/api/v1/users/1/deactivate"),
                 put("/api/v1/users/1/role").contentType(MediaType.APPLICATION_JSON).content(JSON),
                 put("/api/v1/users/1/password").contentType(MediaType.APPLICATION_JSON).content(JSON),
+                put("/api/v1/users/1/unlock"),
                 get("/api/v1/roles")
         );
     }
@@ -115,6 +116,16 @@ class AdminAccessControlTest {
 
         mockMvc.perform(get("/api/v1/users")).andExpect(status().isOk());
         mockMvc.perform(get("/api/v1/roles")).andExpect(status().isOk());
+    }
+
+    @Test
+    @WithMockUser(roles = "ADMIN")
+    void admin_canUnlockAnAccount() throws Exception {
+        when(appUserService.unlock(1L)).thenReturn(new AppUserDto());
+
+        mockMvc.perform(put("/api/v1/users/1/unlock")).andExpect(status().isOk());
+
+        org.mockito.Mockito.verify(appUserService).unlock(1L);
     }
 
     private static String createBody(String role) {

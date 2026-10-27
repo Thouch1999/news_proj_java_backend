@@ -39,6 +39,10 @@ public class Comment {
     @Column(nullable = false, columnDefinition = "VARCHAR(20)")
     private CommentStatus status = CommentStatus.VISIBLE;
 
+    // why a moderator sees it (e.g. "Contains a blocked word: ..."); never shown to the public
+    @Column(length = 255)
+    private String moderationNote;
+
     @CreationTimestamp
     @Column(nullable = false, updatable = false)
     private LocalDateTime createdAt;

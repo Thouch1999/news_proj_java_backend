@@ -13,12 +13,16 @@ import com.api.v1.newssystem.model.enumerate.SettingGroup;
 import com.api.v1.newssystem.model.enumerate.SettingKey;
 import com.api.v1.newssystem.model.enumerate.SettingType;
 import com.api.v1.newssystem.model.request.SettingsUpdateRequest;
+import com.api.v1.newssystem.model.response.PopupRulesDto;
+import com.api.v1.newssystem.model.response.SidebarSettingsDto;
+import com.api.v1.newssystem.model.enumerate.SidebarLayout;
 import com.api.v1.newssystem.repository.AppUserRepository;
 import com.api.v1.newssystem.repository.SystemSettingRepository;
 import com.api.v1.newssystem.security.CurrentUserService;
 import com.api.v1.newssystem.service.FileStorageService;
 import com.api.v1.newssystem.service.SystemSettingService;
 import com.api.v1.newssystem.util.ApiResponseUtil;
+import com.api.v1.newssystem.util.PopupRules;
 import com.api.v1.newssystem.util.SettingValueValidator;
 import lombok.RequiredArgsConstructor;
 import org.springframework.cache.Cache;
@@ -108,8 +112,53 @@ public class SystemSettingServiceImpl implements SystemSettingService {
     }
 
     @Override
+    public java.util.List<String> getCommentBlockedWords() {
+        return com.api.v1.newssystem.util.CommentRules.parseBlockedWords(values().get(SettingKey.COMMENT_BLOCKED_WORDS));
+    }
+
+    @Override
     public boolean isCommentsEnabledDefault() {
         return Boolean.parseBoolean(values().get(SettingKey.COMMENTS_ENABLED_DEFAULT));
+    }
+
+    @Override
+    public boolean isSponsorsEnabled() {
+        return Boolean.parseBoolean(values().get(SettingKey.SPONSORS_ENABLED));
+    }
+
+    @Override
+    public boolean isSponsorPopupEnabled() {
+        return Boolean.parseBoolean(values().get(SettingKey.SPONSOR_POPUP_ENABLED));
+    }
+
+    @Override
+    public PopupRulesDto popupDefaults() {
+        Map<SettingKey, String> values = values();
+        return PopupRules.defaults(values.get(SettingKey.POPUP_TRIGGER), values.get(SettingKey.POPUP_DELAY_SECONDS),
+                values.get(SettingKey.POPUP_SCROLL_PERCENT), values.get(SettingKey.POPUP_FREQUENCY),
+                values.get(SettingKey.POPUP_FREQUENCY_DAYS));
+    }
+
+    @Override
+    public SidebarSettingsDto sidebarSettings() {
+        Map<SettingKey, String> values = values();
+        String layout = values.get(SettingKey.SPONSOR_SIDEBAR_LAYOUT);
+        boolean known = java.util.Arrays.stream(SidebarLayout.values()).anyMatch(option -> option.name().equals(layout));
+        return new SidebarSettingsDto(known ? layout : SettingKey.SPONSOR_SIDEBAR_LAYOUT.getDefaultValue(),
+                wholeNumber(values.get(SettingKey.SPONSOR_SIDEBAR_COUNT), SettingKey.SPONSOR_SIDEBAR_COUNT, SettingKey.SIDEBAR_COUNT_MIN, SettingKey.SIDEBAR_COUNT_MAX),
+                Boolean.parseBoolean(values.get(SettingKey.SPONSOR_SIDEBAR_ROTATE)),
+                wholeNumber(values.get(SettingKey.SPONSOR_SIDEBAR_INTERVAL_SECONDS), SettingKey.SPONSOR_SIDEBAR_INTERVAL_SECONDS, SettingKey.SIDEBAR_INTERVAL_MIN, SettingKey.SIDEBAR_INTERVAL_MAX));
+    }
+
+    // a saved number inside its limits; an old or broken value is replaced by the default of the setting
+    private static int wholeNumber(String text, SettingKey setting, int min, int max) {
+        int number;
+        try {
+            number = Integer.parseInt(text == null ? "" : text.strip());
+        } catch (NumberFormatException e) {
+            number = Integer.parseInt(setting.getDefaultValue());
+        }
+        return Math.max(min, Math.min(max, number));
     }
 
     // ---- writing ----

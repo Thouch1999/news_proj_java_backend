@@ -101,7 +101,7 @@ class NewsServiceImplTest {
     @BeforeEach
     void setUp() {
         service = new NewsServiceImpl(newsRepository, newsTagRepository, newsImageRepository, newsStatusHistoryRepository,
-                commentRepository, bookmarkRepository, newsViewRepository, categoryRepository, tagRepository, appUserRepository, currentUserService, fileStorageService, appProperty, systemSettingService, org.mockito.Mockito.mock(org.springframework.context.ApplicationEventPublisher.class), org.mockito.Mockito.mock(com.api.v1.newssystem.service.PreviewService.class), activityLogService);
+                commentRepository, bookmarkRepository, newsViewRepository, categoryRepository, tagRepository, appUserRepository, currentUserService, fileStorageService, appProperty, systemSettingService, org.mockito.Mockito.mock(org.springframework.context.ApplicationEventPublisher.class), org.mockito.Mockito.mock(com.api.v1.newssystem.service.PreviewService.class), activityLogService, java.time.Clock.systemDefaultZone());
         lenient().when(systemSettingService.isCommentsEnabledDefault()).thenReturn(true);
         me = user(ME);
         me.setRole(Roles.AUTHOR);
@@ -669,13 +669,13 @@ class NewsServiceImplTest {
         when(newsRepository.search(any(), any(), any(), any(Pageable.class))).thenReturn(new PageImpl<>(List.of(other)));
 
         // no filter: every article of every author
-        Page<NewsSummaryDto> all = service.listManaged(null, null, null, 1, 10);
+        Page<NewsSummaryDto> all = service.listManaged(null, null, null, null, 1, 10);
         verify(newsRepository).search(isNull(), isNull(), isNull(), any(Pageable.class));
         assertThat(all.getContent().get(0).isEditable()).isTrue();
         assertThat(all.getContent().get(0).getAuthorId()).isEqualTo(ME);
 
         // with filters
-        service.listManaged(NewsStatus.PUBLISHED, 5L, 3L, 1, 10);
+        service.listManaged(NewsStatus.PUBLISHED, 5L, 3L, null, 1, 10);
         verify(newsRepository).search(eq(5L), eq(3L), eq(NewsStatus.PUBLISHED), any(Pageable.class));
     }
 
@@ -683,7 +683,7 @@ class NewsServiceImplTest {
     void author_listManaged_isAlwaysLimitedToOwnArticles_evenWhenAskingForAnotherAuthor() {
         when(newsRepository.search(any(), any(), any(), any(Pageable.class))).thenReturn(new PageImpl<>(List.of()));
 
-        service.listManaged(NewsStatus.DRAFT, 2L, 3L, 1, 10);
+        service.listManaged(NewsStatus.DRAFT, 2L, 3L, null, 1, 10);
 
         verify(newsRepository).search(eq(ME), eq(3L), eq(NewsStatus.DRAFT), any(Pageable.class));
         verify(newsRepository, never()).search(eq(2L), any(), any(), any(Pageable.class));

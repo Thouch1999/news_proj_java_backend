@@ -6,10 +6,12 @@ import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
 import org.jspecify.annotations.NullMarked;
+import org.jspecify.annotations.Nullable;
 
 import org.hibernate.annotations.CreationTimestamp;
 import org.hibernate.annotations.UpdateTimestamp;
 
+import java.time.Instant;
 import java.time.LocalDateTime;
 
 @Entity
@@ -22,7 +24,8 @@ import java.time.LocalDateTime;
                 @Index(name = "idx_news_status", columnList = "status"),
                 @Index(name = "idx_news_category_id", columnList = "category_id"),
                 @Index(name = "idx_news_published_at", columnList = "published_at"),
-                @Index(name = "idx_news_author_id", columnList = "author_id")
+                @Index(name = "idx_news_author_id", columnList = "author_id"),
+                @Index(name = "idx_news_status_scheduled_at", columnList = "status, scheduled_at")
         })
 public class News {
     @Id
@@ -58,6 +61,16 @@ public class News {
 
     @Column(name = "published_at")
     private LocalDateTime publishedAt;
+
+    // scheduled publishing: when (UTC) and by whom; set while the article is SCHEDULED, kept after the job published it
+    @Column(name = "scheduled_at")
+    @Nullable
+    private Instant scheduledAt;
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "scheduled_by")
+    @Nullable
+    private AppUser scheduledBy;
 
     @Column(nullable = false)
     private long viewCount = 0;

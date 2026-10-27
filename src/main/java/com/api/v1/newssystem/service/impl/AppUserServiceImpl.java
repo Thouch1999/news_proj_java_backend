@@ -5,6 +5,7 @@ import com.api.v1.newssystem.common.exception.CustomException;
 import com.api.v1.newssystem.model.enumerate.ActivityAction;
 import com.api.v1.newssystem.model.enumerate.ActivityTargetType;
 import com.api.v1.newssystem.service.ActivityLogService;
+import com.api.v1.newssystem.service.LoginLockoutService;
 import com.api.v1.newssystem.util.ActivityDetails;
 import com.api.v1.newssystem.model.entity.AppUser;
 import com.api.v1.newssystem.model.entity.Role;
@@ -58,6 +59,7 @@ public class AppUserServiceImpl implements AppUserService {
     private final FileStorageService fileStorageService;
     private final ApplicationEventPublisher eventPublisher;
     private final ActivityLogService activityLogService;
+    private final LoginLockoutService loginLockoutService;
 
     @Override
     @NullMarked
@@ -144,7 +146,22 @@ public class AppUserServiceImpl implements AppUserService {
 
     @Override
     public AppUserDto findById(Long id) {
-        return mapper.map(findUser(id), AppUserDto.class);
+        AppUser user = findUser(id);
+        AppUserDto dto = mapper.map(user, AppUserDto.class);
+        dto.setLocked(loginLockoutService.isLocked(user.getEmail()));
+        return dto;
+    }
+
+    @Override
+    @Transactional
+    public AppUserDto unlock(Long id) {
+        AppUser user = findUser(id);
+        if (loginLockoutService.unlock(user.getEmail())) { // nothing to lift, nothing to log
+            activityLogService.record(ActivityAction.ACCOUNT_UNLOCKED, ActivityTargetType.USER, user.getId(), label(user), null);
+        }
+        AppUserDto dto = mapper.map(user, AppUserDto.class);
+        dto.setLocked(false);
+        return dto;
     }
 
     @Override

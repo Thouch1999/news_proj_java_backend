@@ -1,6 +1,8 @@
 package com.api.v1.newssystem.service;
 
 import com.api.v1.newssystem.model.request.SettingsUpdateRequest;
+import com.api.v1.newssystem.model.response.PopupRulesDto;
+import com.api.v1.newssystem.model.response.SidebarSettingsDto;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.util.Map;
@@ -26,6 +28,21 @@ public interface SystemSettingService {
 
     /** The default page size of the public news lists (setting news_per_page). */
     int getNewsPerPage();
+
+    /** Whether sponsors are shown at all (setting sponsors_enabled). */
+    boolean isSponsorsEnabled();
+
+    /** Whether the sponsor popup is shown (setting sponsor_popup_enabled). */
+    boolean isSponsorPopupEnabled();
+
+    /** The site defaults of the sponsor popup timing (settings popup_*), always complete and inside the safety limits. */
+    PopupRulesDto popupDefaults();
+
+    /** The display settings of the sidebar slideshow (settings sponsor_sidebar_*), always valid and inside the limits. */
+    SidebarSettingsDto sidebarSettings();
+
+    /** The blocked words of the comments (setting comment_blocked_words), one per entry; empty when there are none. */
+    java.util.List<String> getCommentBlockedWords();
 
     /** Whether the comments of a new article are open when the author does not say (setting comments_enabled_default). */
     boolean isCommentsEnabledDefault();

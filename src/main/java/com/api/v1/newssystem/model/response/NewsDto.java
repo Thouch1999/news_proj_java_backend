@@ -6,6 +6,7 @@ import lombok.AllArgsConstructor;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 
+import java.time.Instant;
 import java.time.LocalDateTime;
 import java.util.List;
 
@@ -34,6 +35,10 @@ public class NewsDto {
     private long viewCount;
     @JsonFormat(shape = JsonFormat.Shape.STRING)
     private LocalDateTime publishedAt;
+    // scheduled publishing (UTC): when the article goes live and who scheduled it; null when it is not scheduled
+    @JsonFormat(shape = JsonFormat.Shape.STRING)
+    private Instant scheduledAt;
+    private String scheduledByName;
     @JsonFormat(shape = JsonFormat.Shape.STRING)
     private LocalDateTime createdAt;
     @JsonFormat(shape = JsonFormat.Shape.STRING)

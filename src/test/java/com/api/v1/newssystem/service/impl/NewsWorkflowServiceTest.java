@@ -96,6 +96,7 @@ class NewsWorkflowServiceTest {
     @Mock
     private com.api.v1.newssystem.service.PreviewService previewService;
 
+    private final java.time.Clock clock = java.time.Clock.systemDefaultZone();
     private NewsServiceImpl service;
     private AppUser owner;
     private AppUser actor;
@@ -107,7 +108,7 @@ class NewsWorkflowServiceTest {
     void setUp() {
         service = new NewsServiceImpl(newsRepository, newsTagRepository, newsImageRepository, newsStatusHistoryRepository,
                 commentRepository, bookmarkRepository, newsViewRepository, categoryRepository, tagRepository,
-                appUserRepository, currentUserService, fileStorageService, new AppProperty(), systemSettingService, eventPublisher, previewService, activityLogService);
+                appUserRepository, currentUserService, fileStorageService, new AppProperty(), systemSettingService, eventPublisher, previewService, activityLogService, clock);
         lenient().when(systemSettingService.isCommentsEnabledDefault()).thenReturn(true);
         owner = user(OWNER_ID, Roles.AUTHOR);
         loginAs(owner);
@@ -475,9 +476,9 @@ class NewsWorkflowServiceTest {
     }
 
     @Test
-    void publish_byEditor_fromAnyStatusButPending_isAConflict() {
+    void publish_byEditor_fromAnyStatusButPendingOrScheduled_isAConflict() {
         loginAs(Roles.EDITOR);
-        for (NewsStatus status : allBut(NewsStatus.PENDING)) {
+        for (NewsStatus status : allBut(NewsStatus.PENDING, NewsStatus.SCHEDULED)) {
             News news = article(status);
 
             assertFails(() -> service.publish(NEWS_ID), HttpStatus.CONFLICT);
@@ -489,7 +490,7 @@ class NewsWorkflowServiceTest {
     @Test
     void publish_byAdmin_fromRejectedPublishedOrArchived_isAConflict() {
         loginAs(Roles.ADMIN);
-        for (NewsStatus status : allBut(NewsStatus.PENDING, NewsStatus.DRAFT)) {
+        for (NewsStatus status : allBut(NewsStatus.PENDING, NewsStatus.SCHEDULED, NewsStatus.DRAFT)) {
             News news = article(status);
 
             assertFails(() -> service.publish(NEWS_ID), HttpStatus.CONFLICT);
@@ -743,7 +744,7 @@ class NewsWorkflowServiceTest {
         loginAs(Roles.EDITOR);
         when(newsRepository.search(any(), any(), any(), any(Pageable.class))).thenReturn(new PageImpl<>(List.of()));
 
-        service.listManaged(NewsStatus.PENDING, 5L, null, 1, 10);
+        service.listManaged(NewsStatus.PENDING, 5L, null, null, 1, 10);
 
         verify(newsRepository).search(eq(5L), eq(null), eq(NewsStatus.PENDING), any(Pageable.class));
     }

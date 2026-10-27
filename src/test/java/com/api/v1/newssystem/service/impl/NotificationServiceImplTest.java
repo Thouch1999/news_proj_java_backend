@@ -167,6 +167,34 @@ class NotificationServiceImplTest {
         verify(notificationRepository, never()).save(any());
     }
 
+    @Test
+    void scheduled_goesToTheAuthor_withTheTime_andTheAutomaticPublishToo_evenWhenTheyScheduledIt() {
+        com.api.v1.newssystem.model.entity.News news = new com.api.v1.newssystem.model.entity.News();
+        news.setId(NEWS_ID);
+        news.setTitle("Title");
+        news.setSlug("title");
+        news.setAuthor(user(AUTHOR, Roles.AUTHOR));
+        java.time.Instant at = java.time.Instant.parse("2026-10-20T00:00:00Z");
+
+        service.record(NotificationEvent.articleScheduled(user(EDITOR, Roles.EDITOR), news, at));
+
+        Notification scheduled = saved().get(0);
+        assertThat(scheduled.getRecipient().getId()).isEqualTo(AUTHOR);
+        assertThat(scheduled.getType()).isEqualTo(NotificationType.ARTICLE_SCHEDULED);
+        assertThat(scheduled.getData()).contains("\"scheduledAt\":\"2026-10-20T00:00:00Z\"");
+        assertThat(scheduled.getTitle()).isNotBlank();
+        assertThat(scheduled.getMessage()).contains("Title").contains("2026-10-20T00:00:00Z");
+
+        // the job publishes: the system is the actor, so an author who scheduled their own article is still told
+        org.mockito.Mockito.clearInvocations(notificationRepository);
+        service.record(NotificationEvent.articlePublishedAutomatically(news, user(AUTHOR, Roles.AUTHOR)));
+
+        Notification published = saved().get(0);
+        assertThat(published.getRecipient().getId()).isEqualTo(AUTHOR);
+        assertThat(published.getType()).isEqualTo(NotificationType.ARTICLE_PUBLISHED);
+        assertThat(published.getActor()).isNull();
+    }
+
     // ---------------- grouping of NEW_COMMENT ----------------
 
     @Test

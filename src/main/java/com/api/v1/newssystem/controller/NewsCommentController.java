@@ -2,6 +2,7 @@ package com.api.v1.newssystem.controller;
 
 import com.api.v1.newssystem.common.response.PaginationResponse;
 import com.api.v1.newssystem.common.response.SuccessResponse;
+import com.api.v1.newssystem.model.enumerate.CommentStatus;
 import com.api.v1.newssystem.model.request.CommentRequest;
 import com.api.v1.newssystem.model.response.CommentDto;
 import com.api.v1.newssystem.service.CommentService;
@@ -41,8 +42,10 @@ public class NewsCommentController {
     @PostMapping
     public ResponseEntity<SuccessResponse<CommentDto>> create(@PathVariable Long newsId,
                                                               @Valid @RequestBody CommentRequest request) {
+        CommentDto created = commentService.create(newsId, request);
+        // a comment held for review (a blocked word) is accepted, not created yet
         return ResponseEntity.ok(
-                ApiResponseUtil.success(HttpStatus.CREATED, commentService.create(newsId, request))
+                ApiResponseUtil.success(created.getStatus() == CommentStatus.HIDDEN ? HttpStatus.ACCEPTED : HttpStatus.CREATED, created)
         );
     }
 }

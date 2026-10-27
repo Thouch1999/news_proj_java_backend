@@ -51,18 +51,54 @@ public enum SettingKey {
     NEWS_PER_PAGE("news_per_page", SettingGroup.CONTENT, SettingType.NUMBER, "10", true, 2, true, Rule.NEWS_PER_PAGE),
     // only the editors' side needs this one, so it is not public
     COMMENTS_ENABLED_DEFAULT("comments_enabled_default", SettingGroup.CONTENT, SettingType.BOOLEAN, "true", false, 5, true, Rule.NONE),
-    SHOW_VIEW_COUNT("show_view_count", SettingGroup.CONTENT, SettingType.BOOLEAN, "true", true, 5, true, Rule.NONE);
+    // one word or phrase per line (English and Khmer); a comment that contains one is held for review. Not public.
+    COMMENT_BLOCKED_WORDS("comment_blocked_words", SettingGroup.CONTENT, SettingType.TEXT, "", false, 5000, false, Rule.NONE),
+    SHOW_VIEW_COUNT("show_view_count", SettingGroup.CONTENT, SettingType.BOOLEAN, "true", true, 5, true, Rule.NONE),
+    // sponsors: the website reads them through the public endpoint; the popup ones are the site defaults of the popup
+    // timing (a sponsor may have its own, see Sponsor.popupUseDefaults)
+    SPONSORS_ENABLED("sponsors_enabled", SettingGroup.CONTENT, SettingType.BOOLEAN, "true", true, 5, true, Rule.NONE),
+    SPONSOR_POPUP_ENABLED("sponsor_popup_enabled", SettingGroup.CONTENT, SettingType.BOOLEAN, "true", true, 5, true, Rule.NONE),
+    POPUP_TRIGGER("popup_trigger", SettingGroup.CONTENT, SettingType.STRING, "FIRST_OF_BOTH", true, 20, true, Rule.POPUP_TRIGGER),
+    POPUP_DELAY_SECONDS("popup_delay_seconds", SettingGroup.CONTENT, SettingType.NUMBER, "15", true, 3, true, Rule.POPUP_DELAY),
+    POPUP_SCROLL_PERCENT("popup_scroll_percent", SettingGroup.CONTENT, SettingType.NUMBER, "50", true, 3, true, Rule.SCROLL_PERCENT),
+    POPUP_FREQUENCY("popup_frequency", SettingGroup.CONTENT, SettingType.STRING, "PER_DAY", true, 20, true, Rule.POPUP_FREQUENCY),
+    POPUP_FREQUENCY_DAYS("popup_frequency_days", SettingGroup.CONTENT, SettingType.NUMBER, "3", true, 2, true, Rule.FREQUENCY_DAYS),
+    // the sponsors of the article sidebar: a slideshow of several sponsors (see SidebarLayout)
+    SPONSOR_SIDEBAR_COUNT("sponsor_sidebar_count", SettingGroup.CONTENT, SettingType.NUMBER, "1", true, 2, true, Rule.SIDEBAR_COUNT),
+    SPONSOR_SIDEBAR_LAYOUT("sponsor_sidebar_layout", SettingGroup.CONTENT, SettingType.STRING, "LIST_1", true, 20, true, Rule.SIDEBAR_LAYOUT),
+    SPONSOR_SIDEBAR_ROTATE("sponsor_sidebar_rotate", SettingGroup.CONTENT, SettingType.BOOLEAN, "true", true, 5, true, Rule.NONE),
+    SPONSOR_SIDEBAR_INTERVAL_SECONDS("sponsor_sidebar_interval_seconds", SettingGroup.CONTENT, SettingType.NUMBER, "8", true, 2, true, Rule.SIDEBAR_INTERVAL);
 
     /** An extra check on top of the type. */
     public enum Rule {
         NONE,
-        LANGUAGE,      // en or km
+        LANGUAGE,       // en or km
         EMAIL,
-        NEWS_PER_PAGE  // 5 to 50
+        NEWS_PER_PAGE,  // 5 to 50
+        POPUP_DELAY,     // 5 to 120 seconds
+        SCROLL_PERCENT,  // 20 to 90
+        POPUP_TRIGGER,   // DELAY, SCROLL or FIRST_OF_BOTH
+        POPUP_FREQUENCY, // PER_VISIT, PER_DAY or EVERY_N_DAYS
+        FREQUENCY_DAYS,  // 1 to 30
+        SIDEBAR_COUNT,   // 1 to 12 sponsors per slide
+        SIDEBAR_LAYOUT,  // LIST_1, GRID_2 or LOGOS_4
+        SIDEBAR_INTERVAL // 5 to 60 seconds
     }
 
     public static final int NEWS_PER_PAGE_MIN = 5;
     public static final int NEWS_PER_PAGE_MAX = 50;
+    // the safety limits of the popup timing, for the site defaults and for every sponsor (a popup is never shown at once)
+    public static final int POPUP_DELAY_MIN = 5;
+    public static final int POPUP_DELAY_MAX = 120;
+    public static final int SCROLL_PERCENT_MIN = 20;
+    public static final int SCROLL_PERCENT_MAX = 90;
+    public static final int FREQUENCY_DAYS_MIN = 1;
+    public static final int FREQUENCY_DAYS_MAX = 30;
+    // the sidebar slideshow
+    public static final int SIDEBAR_COUNT_MIN = 1;
+    public static final int SIDEBAR_COUNT_MAX = 12;
+    public static final int SIDEBAR_INTERVAL_MIN = 5;
+    public static final int SIDEBAR_INTERVAL_MAX = 60;
     public static final List<String> LANGUAGES = List.of("en", "km");
 
     private final String key;

@@ -24,7 +24,9 @@ import com.api.v1.newssystem.repository.NewsRepository;
 import com.api.v1.newssystem.repository.NewsTagRepository;
 import com.api.v1.newssystem.repository.NewsViewRepository;
 import com.api.v1.newssystem.security.CurrentUserService;
+import com.api.v1.newssystem.model.enumerate.RateLimitAction;
 import com.api.v1.newssystem.service.PublicNewsService;
+import com.api.v1.newssystem.service.RateLimitService;
 import com.api.v1.newssystem.service.SystemSettingService;
 import jakarta.transaction.Transactional;
 import lombok.RequiredArgsConstructor;
@@ -73,12 +75,16 @@ public class PublicNewsServiceImpl implements PublicNewsService {
     private final AppUserRepository appUserRepository;
     private final CurrentUserService currentUserService;
     private final SystemSettingService systemSettingService;
+    private final RateLimitService rateLimitService;
 
     @Override
     @Transactional
     public Page<PublicNewsSummaryDto> list(String keyword, String category, String tag, LocalDate from, LocalDate to, int page, Integer size) {
         if (from != null && to != null && from.isAfter(to)) {
             throw new CustomException(HttpStatus.BAD_REQUEST, MessageConstant.INVALID_PARAMETER.getDefaultMessage());
+        }
+        if (keyword != null && !keyword.isBlank()) {
+            rateLimitService.checkIp(RateLimitAction.SEARCH); // only a search counts, not the plain list
         }
         Pageable pageable = PageRequest.of(Math.max(page, 1) - 1, clamp(size == null ? systemSettingService.getNewsPerPage() : size, MAX_PAGE_SIZE), NEWEST);
         Page<News> found = newsRepository.searchPublished(

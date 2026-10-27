@@ -31,4 +31,8 @@ public class RegisterRequest {
     @NotBlank(message = "Confirm password can not be blank")
     @Pattern(regexp = "^.{8,}$", message = "Password must be at least 8 characters long")
     private String confirm;
+
+    // honeypot: a hidden field that people never fill in; when it has a value the request is ignored (see the protection rules)
+    @Size(max = 255, message = "Website must be at most 255 characters")
+    private String website;
 }

@@ -116,6 +116,14 @@ public class AppUserController {
         return ResponseEntity.ok(ApiResponseUtil.success(HttpStatus.OK));
     }
 
+    // lifts the temporary lock of an account after too many failed logins
+    @PutMapping("/{id}/unlock")
+    public ResponseEntity<SuccessResponse<AppUserDto>> unlock(@PathVariable Long id) {
+        return ResponseEntity.ok(
+                ApiResponseUtil.success(HttpStatus.OK, appUserService.unlock(id))
+        );
+    }
+
     // only the super admin may call it: checked in the service (the route is open to every admin)
     @PostMapping("/super-admin/transfer")
     public ResponseEntity<SuccessResponse<AppUserDto>> transferSuperAdmin(@Valid @RequestBody TransferSuperAdminRequest request) {

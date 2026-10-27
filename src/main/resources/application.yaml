@@ -25,8 +25,8 @@ spring:
             enable: true
   servlet:
     multipart:
-      max-file-size: 5MB
-      max-request-size: 6MB
+      max-file-size: 15MB
+      max-request-size: 18MB
   web:
     error:
       include-stacktrace: never
@@ -62,6 +62,23 @@ app:
     # the reverse proxies in front of the backend (comma separated addresses or CIDR ranges, e.g. 127.0.0.1,10.0.0.0/8);
     # only their X-Forwarded-For header is believed. Empty: the address of the connection is always used.
     trusted-proxies: ${TRUSTED_PROXIES:}
+  # spam and abuse protection: in-memory limits (per server), all changeable here
+  protection:
+    rate-limit:
+      register: { max: 5, window-seconds: 3600 }
+      login: { max: 30, window-seconds: 60 }
+      otp: { max: 10, window-seconds: 3600 }
+      comment-per-minute: { max: 3, window-seconds: 60 }
+      comment-per-day: { max: 50, window-seconds: 86400 }
+      search: { max: 30, window-seconds: 60 }
+    lockout:
+      window-seconds: 900
+      lock-seconds: 900
+      account-max-failures: 5
+      ip-max-failures: 20
+    comment:
+      max-links: 2
+      min-account-age-minutes: 10
   seed:
     admin:
       username: Admin

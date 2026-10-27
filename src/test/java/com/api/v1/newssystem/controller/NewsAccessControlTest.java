@@ -94,7 +94,7 @@ class NewsAccessControlTest {
     @WithMockUser(roles = "AUTHOR")
     void author_canUseEveryEndpoint() throws Exception {
         when(newsService.listMine(any(), anyInt(), anyInt())).thenReturn(Page.empty());
-        when(newsService.listManaged(any(), any(), any(), anyInt(), anyInt())).thenReturn(Page.empty());
+        when(newsService.listManaged(any(), any(), any(), any(), anyInt(), anyInt())).thenReturn(Page.empty());
 
         assertAll(status().isOk());
     }
@@ -110,7 +110,7 @@ class NewsAccessControlTest {
     void editor_canUseEveryManagementEndpoint() throws Exception {
         // an editor reads and edits articles; what each role may do with an article is decided in NewsService
         when(newsService.listMine(any(), anyInt(), anyInt())).thenReturn(Page.empty());
-        when(newsService.listManaged(any(), any(), any(), anyInt(), anyInt())).thenReturn(Page.empty());
+        when(newsService.listManaged(any(), any(), any(), any(), anyInt(), anyInt())).thenReturn(Page.empty());
 
         assertAll(status().isOk());
     }
@@ -190,10 +190,54 @@ class NewsAccessControlTest {
         assertOnly(status().isUnauthorized(), submit(), publish(), reject(), archive(), restore(), reviewQueue(), history());
     }
 
+    // ---- scheduled publishing ----
+
+    private static final String SCHEDULE = "{\"scheduledAt\":\"2026-10-20T00:00:00Z\"}";
+
+    private RequestBuilder[] scheduleEndpoints() {
+        return new RequestBuilder[]{
+                post("/api/v1/news/1/schedule").contentType(MediaType.APPLICATION_JSON).content(SCHEDULE),
+                org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch("/api/v1/news/1/schedule")
+                        .contentType(MediaType.APPLICATION_JSON).content(SCHEDULE),
+                delete("/api/v1/news/1/schedule"),
+                get("/api/v1/news/scheduled/upcoming")};
+    }
+
+    @Test
+    @WithMockUser(roles = {"EDITOR"})
+    void schedule_editor_isAllowed() throws Exception {
+        assertOnly(status().isOk(), scheduleEndpoints());
+    }
+
+    @Test
+    @WithMockUser(roles = "ADMIN")
+    void schedule_admin_isAllowed() throws Exception {
+        assertOnly(status().isOk(), scheduleEndpoints());
+    }
+
+    @Test
+    @WithMockUser(roles = "AUTHOR")
+    void schedule_author_isForbidden() throws Exception {
+        assertOnly(status().isForbidden(), scheduleEndpoints());
+    }
+
+    @Test
+    @WithMockUser(roles = "READER")
+    void schedule_reader_isForbidden() throws Exception {
+        assertOnly(status().isForbidden(), scheduleEndpoints());
+    }
+
+    @Test
+    void schedule_anonymous_isUnauthorized() throws Exception {
+        when(objectMapper.writeValueAsString(any())).thenReturn("{}");
+
+        assertOnly(status().isUnauthorized(), scheduleEndpoints());
+    }
+
     @Test
     @WithMockUser(roles = "ADMIN")
     void admin_canUseEveryEndpoint() throws Exception {
-        when(newsService.listManaged(any(), any(), any(), anyInt(), anyInt())).thenReturn(Page.empty());
+        when(newsService.listManaged(any(), any(), any(), any(), anyInt(), anyInt())).thenReturn(Page.empty());
         when(newsService.listMine(any(), anyInt(), anyInt())).thenReturn(Page.empty());
 
         assertAll(status().isOk());

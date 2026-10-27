@@ -20,4 +20,6 @@ public class AppUserDto {
     private boolean emailVerified;
     private Roles role;
     private boolean superAdmin;
+    // the account is locked after too many failed logins (only filled by the admin detail and unlock answers)
+    private boolean locked;
 }

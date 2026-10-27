@@ -106,6 +106,7 @@ class CommentAccessControlTest {
     }
 
     private void stubPages() {
+        when(commentService.create(any(), any())).thenReturn(new com.api.v1.newssystem.model.response.CommentDto());
         when(commentService.listVisible(any(), anyInt(), anyInt())).thenReturn(Page.empty());
         when(commentService.listAll(any(), any(), any(), anyInt(), anyInt())).thenReturn(Page.empty());
     }
@@ -177,7 +178,7 @@ class CommentAccessControlTest {
     @WithMockUser(roles = "AUTHOR")
     void theArticleManagementEndpoints_areUnchanged_byTheCommentRules() throws Exception {
         // GET /news/{id}/comments is public, but the rest of /api/v1/news/** still follows its own rules
-        when(newsService.listManaged(any(), any(), any(), anyInt(), anyInt())).thenReturn(Page.empty());
+        when(newsService.listManaged(any(), any(), any(), any(), anyInt(), anyInt())).thenReturn(Page.empty());
 
         mockMvc.perform(get("/api/v1/news/manage")).andExpect(status().isOk());
         mockMvc.perform(get("/api/v1/news/review")).andExpect(status().isForbidden());

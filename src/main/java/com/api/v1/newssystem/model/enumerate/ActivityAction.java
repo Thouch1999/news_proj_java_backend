@@ -11,6 +11,9 @@ public enum ActivityAction {
     NEWS_PUBLISHED(true),
     NEWS_REJECTED(true),
     NEWS_ARCHIVED(true),
+    NEWS_SCHEDULED(true),
+    NEWS_SCHEDULE_CHANGED(true),
+    NEWS_SCHEDULE_CANCELLED(true),
     NEWS_RESTORED(true),
     NEWS_DELETED(true),
     COMMENT_HIDDEN(true),
@@ -29,10 +32,18 @@ public enum ActivityAction {
     TAG_CREATED(false),
     TAG_UPDATED(false),
     TAG_DELETED(false),
+    SPONSOR_CREATED(false),
+    SPONSOR_UPDATED(false),
+    SPONSOR_ACTIVATED(false),
+    SPONSOR_DEACTIVATED(false),
+    SPONSOR_DELETED(false),
     SETTINGS_UPDATED(false),
     LOGIN_SUCCESS(false),
     LOGIN_FAILED(false),
-    PASSWORD_CHANGED(false);
+    PASSWORD_CHANGED(false),
+    ACCOUNT_LOCKED(false),
+    IP_BLOCKED(false),
+    ACCOUNT_UNLOCKED(false);
 
     /** The actions of the "Recent activity" card: articles and comments only. */
     public static final Set<ActivityAction> CONTENT_ACTIONS = EnumSet.noneOf(ActivityAction.class);

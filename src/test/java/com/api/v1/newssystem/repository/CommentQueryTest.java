@@ -77,6 +77,7 @@ class CommentQueryTest {
         user.setRole(role);
         user.setUsername(name + " " + token);
         em.persist(user);
+        user.setCreatedAt(LocalDateTime.now().minusDays(1)); // an old account: a new one cannot comment for a few minutes
         return user;
     }
 

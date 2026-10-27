@@ -25,6 +25,10 @@ import com.api.v1.newssystem.model.response.LoginDto;
 import com.api.v1.newssystem.repository.AppUserRepository;
 import com.api.v1.newssystem.security.CurrentUserService;
 import com.api.v1.newssystem.security.JwtService;
+import com.api.v1.newssystem.model.enumerate.RateLimitAction;
+import com.api.v1.newssystem.security.ClientIpResolver;
+import com.api.v1.newssystem.service.LoginLockoutService;
+import com.api.v1.newssystem.service.RateLimitService;
 import com.api.v1.newssystem.service.AppUserService;
 import com.api.v1.newssystem.service.AppUserTokenService;
 import com.api.v1.newssystem.service.AuthService;
@@ -42,6 +46,7 @@ import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.stereotype.Service;
 
 import java.util.List;
+import java.util.concurrent.ThreadLocalRandom;
 
 @Slf4j
 @Service
@@ -60,10 +65,19 @@ public class AuthServiceImpl implements AuthService {
     // for the writes that must be saved together with their activity log entry (the methods themselves are not
     // transactional: a wrong OTP must still count as an attempt)
     private final PlatformTransactionManager transactionManager;
+    private final RateLimitService rateLimitService;
+    private final LoginLockoutService loginLockoutService;
+    private final ClientIpResolver clientIpResolver;
 
     @Override
     public AppUserDto register(RegisterRequest request) {
         String email = normalize(request.getEmail());
+        if (request.getWebsite() != null && !request.getWebsite().isBlank()) {
+            // honeypot: a bot filled the hidden field. It is told that it worked, and nothing is saved or sent.
+            log.debug("Honeypot: registration ignored (ip {})", clientIpResolver.current());
+            return fakeRegistration(request, email);
+        }
+        rateLimitService.checkIp(RateLimitAction.REGISTER);
         if (appUserRepository.existsByEmail(email)) {
             throw new CustomException(HttpStatus.CONFLICT, MessageConstant.EMAIL_ALREADY_EXISTS.getDefaultMessage());
         }
@@ -100,6 +114,7 @@ public class AuthServiceImpl implements AuthService {
 
     @Override
     public void resendOtp(ResendOtpRequest request) {
+        rateLimitService.checkIp(RateLimitAction.OTP); // on top of the cooldown and the hourly limit of each email
         String email = normalize(request.getEmail());
         switch (request.getPurpose()) {
             case REGISTER -> appUserRepository.findByEmail(email)
@@ -113,12 +128,14 @@ public class AuthServiceImpl implements AuthService {
     @Override
     public LoginDto login(AuthRequest request) {
         String email = normalize(request.getEmail());
+        rateLimitService.checkIp(RateLimitAction.LOGIN);
+        loginLockoutService.assertNotLocked(email); // while locked even the right password is refused
         // same error for an unknown email and a wrong password, so accounts cannot be enumerated
-        AppUser user = appUserRepository.findByEmail(email)
-                .filter(found -> passwordEncoder.matches(request.getPassword(), found.getPassword()))
-                .orElse(null);
+        AppUser existing = appUserRepository.findByEmail(email).orElse(null);
+        AppUser user = existing != null && passwordEncoder.matches(request.getPassword(), existing.getPassword()) ? existing : null;
         if (user == null) {
             failedLogin(request.getEmail(), "invalid credentials");
+            countFailure(request.getEmail(), existing != null); // an unknown email is counted the same way
             throw new CustomException(HttpStatus.UNAUTHORIZED, MessageConstant.INVALID_CREDENTIALS.getDefaultMessage());
         }
         checkCanLoginOrLog(user, request.getEmail());
@@ -133,10 +150,12 @@ public class AuthServiceImpl implements AuthService {
     @Override
     public LoginDto verifyLoginOtp(VerifyOtpRequest request) {
         String email = normalize(request.getEmail());
+        loginLockoutService.assertNotLocked(email);
         try {
             otpService.verifyOtp(email, request.getOtp(), OtpPurpose.LOGIN);
         } catch (CustomException e) {
             failedLogin(request.getEmail(), "invalid otp"); // the code that was typed is never kept
+            countFailure(request.getEmail(), appUserRepository.existsByEmail(email));
             throw e;
         }
 
@@ -164,6 +183,7 @@ public class AuthServiceImpl implements AuthService {
 
     @Override
     public void forgotPassword(SendOtpRequest request) {
+        rateLimitService.checkIp(RateLimitAction.OTP);
         sendResetPasswordOtp(normalize(request.getEmail()));
     }
 
@@ -248,7 +268,37 @@ public class AuthServiceImpl implements AuthService {
         }
     }
 
+    // counts a failed login against the account and the IP address; the lock and the block are written in the activity log
+    // (the lock only for an account that exists: the answer to the client is the same for every email)
+    private void countFailure(String typedEmail, boolean accountExists) {
+        LoginLockoutService.Failure failure = loginLockoutService.recordFailure(typedEmail);
+        if (failure.accountLocked() && accountExists) {
+            activityLogService.recordLogin(ActivityAction.ACCOUNT_LOCKED, null, typedEmail,
+                    ActivityDetails.of("failures", failure.accountFailures()));
+        }
+        if (failure.ipBlocked()) {
+            String ip = clientIpResolver.current();
+            activityLogService.recordLogin(ActivityAction.IP_BLOCKED, null, ip == null ? "unknown" : ip,
+                    ActivityDetails.of("failures", failure.ipFailures()));
+        }
+    }
+
+    // what a bot gets back: the shape of a real answer, an id that does not exist, nothing saved
+    private AppUserDto fakeRegistration(RegisterRequest request, String email) {
+        AppUserDto fake = new AppUserDto();
+        fake.setId(ThreadLocalRandom.current().nextLong(1_000_000_000L, Long.MAX_VALUE));
+        fake.setUsername(request.getUsername());
+        fake.setFullName(request.getFullName());
+        fake.setEmail(email);
+        fake.setPhone(request.getPhone());
+        fake.setAddress(request.getAddress());
+        fake.setActive(true);
+        fake.setRole(Roles.READER);
+        return fake;
+    }
+
     private LoginDto loginResult(AppUser user) {
+        loginLockoutService.recordSuccess(user.getEmail());
         activityLogService.recordLogin(ActivityAction.LOGIN_SUCCESS, user, user.getEmail(), null);
         TokenResponse token = jwtService.generateAccess(user);
 

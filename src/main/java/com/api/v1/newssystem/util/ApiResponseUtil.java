@@ -1,5 +1,6 @@
 package com.api.v1.newssystem.util;
 
+import com.api.v1.newssystem.common.constant.MessageConstant;
 import com.api.v1.newssystem.common.response.ErrorResponse;
 import com.api.v1.newssystem.common.response.PaginationResponse;
 import com.api.v1.newssystem.common.response.SuccessResponse;
@@ -98,6 +99,18 @@ public final class ApiResponseUtil {
                 .details(details)
                 .localDateTime(new Date())
                 .path(path)
+                .build();
+    }
+
+    /** A business error of a MessageConstant: the code is in `error`, the text in `message`; `retryAfterSeconds` may be null. */
+    public static ErrorResponse error(MessageConstant message, Integer retryAfterSeconds) {
+        return ErrorResponse.builder()
+                .code(message.getStatus().value())
+                .status(message.getStatus().getReasonPhrase())
+                .error(message.getCode())
+                .message(message.getDefaultMessage())
+                .retryAfterSeconds(retryAfterSeconds)
+                .localDateTime(new Date())
                 .build();
     }
 

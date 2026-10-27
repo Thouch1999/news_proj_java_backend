@@ -5,6 +5,8 @@ import jakarta.servlet.http.HttpServletRequest;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.security.web.util.matcher.IpAddressMatcher;
 import org.springframework.stereotype.Component;
+import org.springframework.web.context.request.RequestContextHolder;
+import org.springframework.web.context.request.ServletRequestAttributes;
 
 import java.util.ArrayList;
 import java.util.Collections;
@@ -67,6 +69,13 @@ public class ClientIpResolver {
             }
         }
         return cut(remote); // every hop is a trusted proxy: the connection is the best we know
+    }
+
+    /** The client address of the request being handled (null outside a request). */
+    public String current() {
+        return RequestContextHolder.getRequestAttributes() instanceof ServletRequestAttributes attributes
+                ? resolve(attributes.getRequest())
+                : null;
     }
 
     private boolean isTrusted(String address) {

@@ -6,6 +6,7 @@ import lombok.AllArgsConstructor;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 
+import java.time.Instant;
 import java.time.LocalDateTime;
 
 // One row of the author's article list (no content).
@@ -24,6 +25,10 @@ public class NewsSummaryDto {
     private String categoryName;
     private String rejectionReason;
     private boolean editable;
+    // scheduled publishing (UTC); null when the article is not scheduled
+    @JsonFormat(shape = JsonFormat.Shape.STRING)
+    private Instant scheduledAt;
+    private String scheduledByName;
     @JsonFormat(shape = JsonFormat.Shape.STRING)
     private LocalDateTime createdAt;
     @JsonFormat(shape = JsonFormat.Shape.STRING)

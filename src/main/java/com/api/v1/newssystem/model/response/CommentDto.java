@@ -26,4 +26,8 @@ public class CommentDto {
     private LocalDateTime createdAt;
     @JsonFormat(shape = JsonFormat.Shape.STRING)
     private LocalDateTime updatedAt;
+    // only in the moderation list (EDITOR / ADMIN), null for everybody else
+    private String moderationNote;
+    // a note for the commenter, e.g. "Your comment is waiting for review."; only in the answer to a new comment
+    private String message;
 }

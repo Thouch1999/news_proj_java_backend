@@ -66,11 +66,13 @@ class AppUserServiceImplTest {
 
     @Mock
     private com.api.v1.newssystem.service.ActivityLogService activityLogService;
+    @Mock
+    private com.api.v1.newssystem.service.LoginLockoutService loginLockoutService;
 
     @BeforeEach
     void setUp() {
         service = new AppUserServiceImpl(appUserRepository, tokenService, currentUserService, passwordEncoder,
-                new MapperConfig().modelMapper(), roleRepository, userRoleRepository, fileStorageService, eventPublisher, activityLogService);
+                new MapperConfig().modelMapper(), roleRepository, userRoleRepository, fileStorageService, eventPublisher, activityLogService, loginLockoutService);
         admin = user(ADMIN_ID, Roles.ADMIN);
     }
 
@@ -710,5 +712,50 @@ class AppUserServiceImplTest {
         assertFails(() -> service.transferSuperAdmin(transfer(3L, "Password-123")), MessageConstant.SUPER_ADMIN_ONLY, HttpStatus.FORBIDDEN);
 
         verify(appUserRepository, never()).saveAndFlush(any());
+    }
+
+    // ---------------- unlock (too many failed logins) ----------------
+
+    @Test
+    void unlock_liftsTheLock_andLogsAccountUnlocked() {
+        AppUser locked = user(OTHER_ID, Roles.AUTHOR);
+        when(appUserRepository.findById(OTHER_ID)).thenReturn(Optional.of(locked));
+        when(loginLockoutService.unlock(locked.getEmail())).thenReturn(true);
+
+        AppUserDto dto = service.unlock(OTHER_ID);
+
+        assertThat(dto.getId()).isEqualTo(OTHER_ID);
+        assertThat(dto.isLocked()).isFalse();
+        verify(activityLogService).record(com.api.v1.newssystem.model.enumerate.ActivityAction.ACCOUNT_UNLOCKED,
+                com.api.v1.newssystem.model.enumerate.ActivityTargetType.USER, OTHER_ID, "User 2", null);
+    }
+
+    @Test
+    void unlock_ofAnAccountThatIsNotLocked_changesNothing_andWritesNoEntry() {
+        AppUser open = user(OTHER_ID, Roles.AUTHOR);
+        when(appUserRepository.findById(OTHER_ID)).thenReturn(Optional.of(open));
+        when(loginLockoutService.unlock(open.getEmail())).thenReturn(false);
+
+        service.unlock(OTHER_ID);
+
+        verify(activityLogService, never()).record(any(), any(), any(), any(), any());
+    }
+
+    @Test
+    void unlock_ofAnUnknownUser_isNotFound() {
+        when(appUserRepository.findById(404L)).thenReturn(Optional.empty());
+
+        assertFails(() -> service.unlock(404L), MessageConstant.USER_NOT_FOUND, HttpStatus.NOT_FOUND);
+
+        verify(loginLockoutService, never()).unlock(any());
+    }
+
+    @Test
+    void findById_tellsTheAdminWhetherTheAccountIsLocked() {
+        AppUser other = user(OTHER_ID, Roles.AUTHOR);
+        when(appUserRepository.findById(OTHER_ID)).thenReturn(Optional.of(other));
+        when(loginLockoutService.isLocked(other.getEmail())).thenReturn(true);
+
+        assertThat(service.findById(OTHER_ID).isLocked()).isTrue();
     }
 }

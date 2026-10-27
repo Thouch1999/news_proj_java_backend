@@ -41,6 +41,9 @@ public interface AppUserService extends UserDetailsService {
 
     void resetPassword(Long id, AdminResetPasswordRequest request);
 
+    /** Lifts the temporary lock of an account (too many failed logins) before it ends; logs ACCOUNT_UNLOCKED when it was locked. */
+    AppUserDto unlock(Long id);
+
     /**
      * Super admin only: moves the super admin mark to another active, email-verified ADMIN after checking the
      * current password of the super admin. Returns the new super admin.
