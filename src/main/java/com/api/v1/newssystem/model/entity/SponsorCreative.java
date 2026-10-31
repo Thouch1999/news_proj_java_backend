@@ -44,7 +44,7 @@ public class SponsorCreative {
     private String altText = "";
 
     // true for the bottom bar image that the image service cut from the popup image (an uploaded bar image is not generated)
-    @Column(nullable = false, columnDefinition = "BIT(1) NOT NULL DEFAULT 0")
+    @Column(name = "is_generated", nullable = false, columnDefinition = "BIT(1) NOT NULL DEFAULT 0")
     private boolean generated = false;
 
     // VARCHAR, not a MySQL ENUM: a type can be added later

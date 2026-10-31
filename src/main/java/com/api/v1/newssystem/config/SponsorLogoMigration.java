@@ -38,7 +38,7 @@ public class SponsorLogoMigration implements ApplicationRunner {
             rows = jdbc.queryForList("""
                     select c.id as creative_id, c.sponsor_id as sponsor_id, c.image_url as image_url
                     from sponsor_creatives c join sponsors s on s.id = c.sponsor_id
-                    where c.placement = 'MOBILE_BOTTOM_BAR' and c.`generated` = 0 and s.logo_url is null
+                    where c.placement = 'MOBILE_BOTTOM_BAR' and c.is_generated = 0 and s.logo_url is null
                     """);
         } catch (RuntimeException e) {
             log.warn("Sponsors: could not look for bar images to move into the logo", e);
