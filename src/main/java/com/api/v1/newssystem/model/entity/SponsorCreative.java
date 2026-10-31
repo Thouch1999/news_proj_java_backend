@@ -43,7 +43,7 @@ public class SponsorCreative {
     @Column(nullable = false, length = 200)
     private String altText = "";
 
-    // true for the bottom bar image that the image service cut from the popup image (an uploaded bar image is not generated)
+    
     @Column(name = "is_generated", nullable = false, columnDefinition = "BIT(1) NOT NULL DEFAULT 0")
     private boolean generated = false;
 
